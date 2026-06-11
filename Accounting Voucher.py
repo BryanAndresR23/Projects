@@ -42,8 +42,8 @@ def leer_pdf(ruta_pdf: str) -> str:
 
 
 def normalizar(s: str) -> str:
-    """Normaliza strings para comparar (quita espacios, guiones y /)."""
-    return re.sub(r"[\s\-/]", "", s.upper())
+    """Normaliza strings para comparar (quita espacios, guiones, puntos y /)."""
+    return re.sub(r"[\s\-/\.]", "", s.upper())
 
 
 def extraer_fecha_formateada(texto: str) -> str:
@@ -54,17 +54,28 @@ def extraer_fecha_formateada(texto: str) -> str:
     return datetime.now().strftime("%d%b%Y")
 
 
+def extraer_codigo_prestamo(texto: str) -> str | None:
+    """
+    Código del campo "REF./NO./PRESTAMO: 20460000" del comprobante.
+    Es el mismo código de 8 dígitos que llevan las carpetas destino:
+      "BID-5858-GN-EC - 20460000 - CONAFIPS"
+    """
+    m = re.search(r"REF[\.\s/]*NO[\.\s/]*PRESTAMO[:\s]*([0-9]{7,9})", texto, re.IGNORECASE)
+    return m.group(1) if m else None
+
+
 def extraer_referencia(texto: str) -> str | None:
     """
-    - BID: BID-2487-OC-EC
+    - BID en cualquier variante: BID-2487-OC-EC, BID-5858-GN-EC,
+      BID-3188-CH-EC, BID-1923-BL-OC-EC... (se identifica por el número)
     - Otros: CAF-12375, CFA-11634, BIRF-8978, etc.
     """
-    m_bid = re.search(r"\bBID[-\s]*([0-9]{3,6})[-\s]*/?\s*OC[-\s]*EC\b", texto, re.IGNORECASE)
+    m_bid = re.search(r"\bBID[-\s]*([0-9]{3,6})\b", texto, re.IGNORECASE)
     if m_bid:
-        return f"BID-{m_bid.group(1)}-OC-EC"
+        return f"BID-{m_bid.group(1)}"
 
     m = re.search(
-        r"\b(CFA|CAF|BIRF|FIDA|FLAR|FMI|BEI|KFW|AIIB|AMAZON|ECR|GPS\s*BLUE|ICO|ECR-04)\b[\-\s]*([0-9]{3,10})(?:\s*(EC))?",
+        r"\b(CFA|CAF|BIRF|FIDA|FLAR|FMI|BEI|KFW|AIIB|AMAZON|ECR|GPS\s*BLUE|ICO)\b[\-\s]*([0-9]{3,10})",
         texto,
         flags=re.IGNORECASE
     )
@@ -73,8 +84,7 @@ def extraer_referencia(texto: str) -> str | None:
 
     codigo = m.group(1).upper().replace(" ", "")
     numero = m.group(2)
-    ec = m.group(3)
-    return f"{codigo}-{numero}" + (" EC" if ec else "")
+    return f"{codigo}-{numero}"
 
 
 def extraer_operacion_tf_gs(texto: str):
@@ -109,32 +119,41 @@ def extraer_num_comp(texto: str, nombre_archivo: str, cod_operacion: str | None)
     return "SINCOMP"
 
 
-def buscar_carpeta_destino(referencia: str) -> str | None:
+def carpetas_mes():
     """
-    Busca carpeta en:
+    Genera todas las carpetas de préstamo del mes en:
       A) ...\\Acreedor\\Pagos\\2026\\Junio\\CARPETA
-      B) ...\\Acreedor\\Pagos\\Junio\\CARPETA
+      B) ...\\Acreedor\\Pagos\\Junio\\CARPETA      <- estructura real vista
     """
-    ref_norm = normalizar(referencia)
-
-    alternativas = {ref_norm}
-    if referencia.upper().startswith("BID-"):
-        num = re.sub(r"[^0-9]", "", referencia)
-        if num:
-            alternativas.add(normalizar(f"BID-{num}"))
-
     for acreedor in os.listdir(base_destino):
         ruta_A = os.path.join(base_destino, acreedor, "Pagos", anio, mes)
         ruta_B = os.path.join(base_destino, acreedor, "Pagos", mes)
-
         for ruta_base in (ruta_A, ruta_B):
             if not os.path.isdir(ruta_base):
                 continue
-
             for carpeta_ref in os.listdir(ruta_base):
-                carp_norm = normalizar(carpeta_ref)
-                if any(a in carp_norm for a in alternativas):
-                    return os.path.join(ruta_base, carpeta_ref)
+                ruta_carpeta = os.path.join(ruta_base, carpeta_ref)
+                if os.path.isdir(ruta_carpeta):
+                    yield carpeta_ref, ruta_carpeta
+
+
+def buscar_carpeta_destino(referencia: str | None, codigo_prestamo: str | None) -> str | None:
+    """
+    1) Match por código de 8 dígitos (REF./NO./PRESTAMO) — exacto y universal.
+    2) Si no, match por referencia (BID-5858, CAF-12375...) exigiendo que
+       después del número no venga otro dígito (BID-585 no matchea BID-5858).
+    """
+    if codigo_prestamo:
+        for carpeta_ref, ruta_carpeta in carpetas_mes():
+            if re.search(rf"(?<!\d){codigo_prestamo}(?!\d)", carpeta_ref):
+                return ruta_carpeta
+
+    if referencia:
+        ref_norm = normalizar(referencia)
+        for carpeta_ref, ruta_carpeta in carpetas_mes():
+            carp_norm = normalizar(carpeta_ref)
+            if re.search(rf"{re.escape(ref_norm)}(?!\d)", carp_norm):
+                return ruta_carpeta
 
     return None
 
@@ -142,13 +161,14 @@ def buscar_carpeta_destino(referencia: str) -> str | None:
 # =========================
 # PROCESO PRINCIPAL
 # =========================
+copiados, omitidos, errores = 0, 0, 0
+
 for subcarpeta in os.listdir(carpeta_origen):
     ruta_sub = os.path.join(carpeta_origen, subcarpeta)
     if not os.path.isdir(ruta_sub):
         continue
 
     # Código TF/GS tomado de los NOMBRES de los archivos de la subcarpeta
-    # (sirve para buscar el ACK aunque el comprobante no lo mencione en su texto)
     prefijo_sub, cod_sub = None, None
     for a in os.listdir(ruta_sub):
         m = re.search(r"\b(TF|GS)-01-([0-9]{6,15})\b", a, re.IGNORECASE)
@@ -169,7 +189,6 @@ for subcarpeta in os.listdir(carpeta_origen):
             continue
 
         # ✅ Omitir mensajes SWIFT TF/GS aunque tengan prefijo numérico
-        # ("684 TF-01-7712600436-signed.pdf" también queda excluido)
         if es_mensaje_swift(archivo):
             continue
 
@@ -179,46 +198,53 @@ for subcarpeta in os.listdir(carpeta_origen):
                 msg = f"⏭️ Omitido (PDF sin texto): {archivo}"
                 print(msg)
                 log.append(msg)
+                omitidos += 1
                 continue
 
-            # Referencia de préstamo (sirve para todos)
-            referencia = extraer_referencia(texto)
-            if not referencia:
-                msg = f"❌ No se encontró referencia de préstamo en: {archivo}"
+            # Identificadores del préstamo
+            codigo_prestamo = extraer_codigo_prestamo(texto)   # ej. 20460000
+            referencia = extraer_referencia(texto)             # ej. BID-5858
+
+            if not codigo_prestamo and not referencia:
+                msg = f"❌ Sin código ni referencia de préstamo en: {archivo}"
                 print(msg)
                 log.append(msg)
+                omitidos += 1
                 continue
 
-            # Carpeta destino (con año o sin año)
-            carpeta_destino_final = buscar_carpeta_destino(referencia)
+            # Carpeta destino
+            carpeta_destino_final = buscar_carpeta_destino(referencia, codigo_prestamo)
             if not carpeta_destino_final:
-                msg = f"❌ No se encontró carpeta que contenga: {referencia} en {mes} {anio}"
+                msg = (f"❌ Sin carpeta destino para {archivo} "
+                       f"(código: {codigo_prestamo or '—'}, ref: {referencia or '—'}) en {mes}")
                 print(msg)
                 log.append(msg)
+                omitidos += 1
                 continue
 
-            # Código de operación: primero del texto del comprobante;
-            # si no aparece, usar el de los archivos TF/GS hermanos
+            # Código de operación: del texto o de los archivos TF/GS hermanos
             prefijo_ack, cod_operacion = extraer_operacion_tf_gs(texto)
             if not cod_operacion and cod_sub:
                 prefijo_ack, cod_operacion = prefijo_sub, cod_sub
 
-            # Fecha para el nombre del comprobante
+            # Fecha y número de comprobante
             fecha_formateada = extraer_fecha_formateada(texto)
-
-            # Número comprobante
             num_comp = extraer_num_comp(texto, archivo, cod_operacion)
 
             # Guardar comprobante
             nuevo_nombre = f"Comprobante Contable No. 771-{num_comp} {fecha_formateada}.pdf"
             ruta_destino_comprobante = os.path.join(carpeta_destino_final, nuevo_nombre)
 
-            if not os.path.exists(ruta_destino_comprobante):
+            if os.path.exists(ruta_destino_comprobante):
+                estado_comp = "ya existía"
+            else:
                 shutil.copy(ruta_pdf, ruta_destino_comprobante)
+                estado_comp = "copiado"
+                copiados += 1
 
             # Buscar el ACK en carpeta_acks por TF/GS-01-cod_operacion
             ack_copiado = None
-            if cod_operacion:
+            if cod_operacion and os.path.isdir(carpeta_acks):
                 for ack_file in os.listdir(carpeta_acks):
                     if not ack_file.lower().endswith(".pdf"):
                         continue
@@ -231,9 +257,9 @@ for subcarpeta in os.listdir(carpeta_origen):
                         break
 
             if ack_copiado:
-                msg = f"✅ Copiados: {nuevo_nombre} + {ack_copiado} → {carpeta_destino_final}"
+                msg = f"✅ {nuevo_nombre} ({estado_comp}) + {ack_copiado} → {carpeta_destino_final}"
             else:
-                msg = f"✅ Copiado comprobante ({referencia}): {nuevo_nombre} (sin ACK encontrado) → {carpeta_destino_final}"
+                msg = f"✅ {nuevo_nombre} ({estado_comp}, sin ACK encontrado) → {carpeta_destino_final}"
 
             print(msg)
             log.append("─" * 60)
@@ -244,6 +270,11 @@ for subcarpeta in os.listdir(carpeta_origen):
             print(msg)
             log.append("─" * 60)
             log.append(msg)
+            errores += 1
+
+resumen = f"\n📊 Resumen: {copiados} copiados | {omitidos} omitidos | {errores} errores"
+print(resumen)
+log.append(resumen)
 
 # Guardar log
 ruta_log = os.path.join(os.getcwd(), "log.txt")
