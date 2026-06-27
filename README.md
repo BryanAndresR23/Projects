@@ -26,6 +26,21 @@ concilia y qué presenta diferencia.
   copia ambos archivos a la misma carpeta.
 - **"Failed to fetch"** = el servidor se cerró → vuelve a lanzar la app.
 
+## 🔄 Mantener tu copia local actualizada (sin descargar ZIP)
+La idea es tener **una carpeta fija** en tu disco que se sincroniza con un clic:
+1. **Una sola vez:** instala [Git para Windows](https://git-scm.com/download/win)
+   (opciones por defecto).
+2. **Una sola vez:** clona el repo en la carpeta donde lo quieras (ej. `C:\Conciliacion`):
+   ```powershell
+   git clone --branch claude/brave-noether-o44tpf https://github.com/BryanAndresR23/Projects.git C:\Conciliacion
+   ```
+3. **Cada vez que haya cambios:** doble clic a **`Actualizar_Conciliacion.bat`**
+   dentro de esa carpeta → baja lo último con `git pull` (no vuelves a descargar nada a mano).
+4. Para usar la app: **`Iniciar_Conciliacion.bat`**.
+
+> Así tus archivos viven en tu disco local de forma permanente; solo se
+> **actualizan** desde GitHub cuando tú lo decides con el `.bat`.
+
 ## 🧩 Conceptos del cruce (por acreedor)
 | Concepto | MEF · hoja *Resumen* | BCE · hoja / columna |
 |----------|----------------------|----------------------|
