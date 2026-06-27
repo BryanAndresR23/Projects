@@ -83,24 +83,65 @@ def handle_exception(e):
             f"ERROR\n\n{tb}</pre>", 200)
 
 
-def _guardar_subida(campo):
-    """Guarda un archivo subido y devuelve su ruta, o None si no vino."""
-    f = request.files.get(campo)
-    if not f or not f.filename:
+def _guardar_subida(storage):
+    """Guarda un FileStorage y devuelve su ruta, o None si no vino."""
+    if not storage or not storage.filename:
         return None
-    nombre = secure_filename(f.filename)
+    nombre = secure_filename(storage.filename)
     ruta = os.path.join(UPLOAD_DIR, nombre)
-    f.save(ruta)
+    storage.save(ruta)
     return ruta
+
+
+def _origen_reporte(ruta):
+    """Detecta si un .xls es del BCE o del MEF mirando sus hojas.
+    BCE -> tiene hojas 'Giros del/al Exterior'; MEF -> tiene hoja 'Resumen'."""
+    try:
+        import xlrd
+        nombres = [h.name.lower() for h in xlrd.open_workbook(ruta).sheets()]
+    except Exception:
+        return None
+    if any("giros" in n for n in nombres):
+        return "bce"
+    if any("resumen" in n for n in nombres):
+        return "mef"
+    return None
+
+
+def _clasificar_subidas():
+    """Toma TODOS los archivos subidos (en cualquier campo) y los reparte en
+    BCE/MEF por su contenido. Así el usuario puede arrastrarlos en cualquier
+    orden o los dos juntos. Devuelve (ruta_bce, ruta_mef, advertencias)."""
+    storages = []
+    for campo in request.files:
+        storages.extend(request.files.getlist(campo))
+    ruta_bce = ruta_mef = None
+    avisos = []
+    for st in storages:
+        ruta = _guardar_subida(st)
+        if not ruta:
+            continue
+        origen = _origen_reporte(ruta)
+        if origen == "bce" and not ruta_bce:
+            ruta_bce = ruta
+        elif origen == "mef" and not ruta_mef:
+            ruta_mef = ruta
+        elif origen is None:
+            avisos.append(f"No reconocí '{os.path.basename(ruta)}' (sin hojas Giros/Resumen)")
+        else:
+            avisos.append(f"Dos reportes del mismo origen ({origen.upper()}): ignoré '{os.path.basename(ruta)}'")
+    return ruta_bce, ruta_mef, avisos
 
 
 @app.route("/api/conciliar", methods=["POST"])
 def api_conciliar():
     """Recibe los dos .xls (multipart) o rutas (json), ejecuta el cruce,
     guarda el resultado en BD y lo devuelve."""
+    avisos = []
     if request.files:
-        ruta_bce = _guardar_subida("bce")
-        ruta_mef = _guardar_subida("mef")
+        # Detección automática por contenido: no importa en qué zona se soltó
+        # cada archivo, ni el orden, ni si se arrastraron los dos juntos.
+        ruta_bce, ruta_mef, avisos = _clasificar_subidas()
         periodo = request.form.get("periodo", "").strip()
     else:
         data = request.json or {}
@@ -109,9 +150,11 @@ def api_conciliar():
         periodo = (data.get("periodo") or "").strip()
 
     if not ruta_bce or not os.path.exists(ruta_bce):
-        return jsonify({"ok": False, "error": "Falta el reporte del BCE (.xls)"})
+        return jsonify({"ok": False, "error": "No identifiqué el reporte del BCE "
+                        "(debe tener hojas 'Giros del/al Exterior'). " + " ".join(avisos)})
     if not ruta_mef or not os.path.exists(ruta_mef):
-        return jsonify({"ok": False, "error": "Falta el reporte del MEF (.xls)"})
+        return jsonify({"ok": False, "error": "No identifiqué el reporte del MEF "
+                        "(debe tener hoja 'Resumen'). " + " ".join(avisos)})
 
     filas = C.conciliar_archivos(ruta_bce, ruta_mef)
     if not periodo:
@@ -142,6 +185,9 @@ def api_conciliar():
         "conciliados": conciliados, "diferencias": diferencias,
         "total_diferencia": round(total_dif, 2),
         "ruta_bce": ruta_bce, "ruta_mef": ruta_mef,
+        "archivo_bce": os.path.basename(ruta_bce),
+        "archivo_mef": os.path.basename(ruta_mef),
+        "avisos": avisos,
     })
 
 
@@ -258,23 +304,15 @@ PANEL_HTML = r"""<!doctype html>
 <div class="wrap">
 
   <div class="card">
-    <div class="row">
-      <div class="drop" id="dzBce" onclick="document.getElementById('bce').click()">
-        <div class="big">🏦</div>
-        <div class="ttl">Reporte Conciliación <b>BCE</b></div>
-        <div class="muted" style="font-size:12px">Arrastra el .xls aquí o haz clic</div>
-        <div class="fn" id="fnBce"></div>
-        <input type="file" id="bce" accept=".xls,.xlsx">
-      </div>
-      <div class="drop" id="dzMef" onclick="document.getElementById('mef').click()">
-        <div class="big">🏛️</div>
-        <div class="ttl">Reporte Conciliación <b>MEF</b></div>
-        <div class="muted" style="font-size:12px">Arrastra el .xls aquí o haz clic</div>
-        <div class="fn" id="fnMef"></div>
-        <input type="file" id="mef" accept=".xls,.xlsx">
-      </div>
+    <div class="drop" id="dzAmbos" onclick="document.getElementById('ambos').click()"
+         style="margin-bottom:14px">
+      <div class="big">📥</div>
+      <div class="ttl">Arrastra aquí los <b>dos reportes</b> (BCE y MEF) — o clic para elegirlos</div>
+      <div class="muted" style="font-size:12px">No importa el orden: la app reconoce cada uno por sus hojas</div>
+      <div class="fn" id="fnAmbos"></div>
+      <input type="file" id="ambos" accept=".xls,.xlsx" multiple>
     </div>
-    <div class="row" style="margin-top:16px">
+    <div class="row" style="margin-top:6px">
       <div class="fld" style="max-width:180px">
         <label>Periodo (AAAA-MM)</label>
         <input type="text" id="periodo" placeholder="2026-03">
@@ -321,34 +359,34 @@ const fmt = n => (n||0).toLocaleString("es-EC",{minimumFractionDigits:2,maximumF
 function msg(t, err){ const m=document.getElementById("msg");
   m.textContent=t; m.style.color=err?"#e15b4c":"#36c172"; }
 
-// ── Drag & drop: enlaza una zona con su <input file> ──────────────────────
-function setupDrop(dzId, inputId, fnId){
-  const dz=document.getElementById(dzId), input=document.getElementById(inputId),
-        fn=document.getElementById(fnId);
-  const valido=f=>f && /\.(xls|xlsx)$/i.test(f.name);
-  const mostrar=()=>{ const f=input.files[0];
-    if(f){ dz.classList.add("set"); fn.textContent="✓ "+f.name; }
-    else { dz.classList.remove("set"); fn.textContent=""; } };
-  input.addEventListener("change",mostrar);
-  ["dragenter","dragover"].forEach(ev=>dz.addEventListener(ev,e=>{
-    e.preventDefault(); e.stopPropagation(); dz.classList.add("over"); }));
-  ["dragleave","drop"].forEach(ev=>dz.addEventListener(ev,e=>{
-    e.preventDefault(); e.stopPropagation(); dz.classList.remove("over"); }));
-  dz.addEventListener("drop",e=>{
-    const f=e.dataTransfer.files[0];
-    if(!valido(f)){ msg("Solo se aceptan archivos .xls o .xlsx",true); return; }
-    const dt=new DataTransfer(); dt.items.add(f); input.files=dt.files; mostrar();
-  });
+// ── Drag & drop: una sola zona admite los dos .xls (en cualquier orden) ────
+const dz=document.getElementById("dzAmbos"),
+      input=document.getElementById("ambos"),
+      fn=document.getElementById("fnAmbos");
+const valido=f=>f && /\.(xls|xlsx)$/i.test(f.name);
+function mostrarAmbos(){
+  const fs=[...input.files];
+  if(fs.length){ dz.classList.add("set");
+    fn.innerHTML=fs.map(f=>"✓ "+f.name).join("<br>"); }
+  else { dz.classList.remove("set"); fn.textContent=""; }
 }
-setupDrop("dzBce","bce","fnBce");
-setupDrop("dzMef","mef","fnMef");
+input.addEventListener("change",mostrarAmbos);
+["dragenter","dragover"].forEach(ev=>dz.addEventListener(ev,e=>{
+  e.preventDefault(); e.stopPropagation(); dz.classList.add("over"); }));
+["dragleave","drop"].forEach(ev=>dz.addEventListener(ev,e=>{
+  e.preventDefault(); e.stopPropagation(); dz.classList.remove("over"); }));
+dz.addEventListener("drop",e=>{
+  const fs=[...e.dataTransfer.files].filter(valido);
+  if(!fs.length){ msg("Solo se aceptan archivos .xls o .xlsx",true); return; }
+  const dt=new DataTransfer(); fs.slice(0,2).forEach(f=>dt.items.add(f));
+  input.files=dt.files; mostrarAmbos();
+});
 
 async function conciliar(){
-  const bce=document.getElementById("bce").files[0];
-  const mef=document.getElementById("mef").files[0];
-  if(!bce||!mef){ msg("Carga ambos reportes (BCE y MEF) arrastrándolos o con clic.",true); return; }
+  const fs=[...input.files];
+  if(fs.length<2){ msg("Carga los DOS reportes (BCE y MEF) en la zona de arriba.",true); return; }
   const fd=new FormData();
-  fd.append("bce",bce); fd.append("mef",mef);
+  fs.forEach(f=>fd.append("archivos",f));
   fd.append("periodo",document.getElementById("periodo").value.trim());
   const btn=document.getElementById("btn"); btn.disabled=true; msg("Procesando…");
   try{
@@ -364,7 +402,9 @@ async function conciliar(){
        <div class="stat bad"><div class="n">${fmt(j.total_diferencia)}</div><div class="l">Σ |Diferencia| USD</div></div>`;
     document.getElementById("resCard").classList.remove("hidden");
     render(); cargarHistorial();
-    msg("Conciliación lista: "+j.conciliados+" conciliados, "+j.diferencias+" con diferencia.");
+    let det="BCE = "+j.archivo_bce+"  ·  MEF = "+j.archivo_mef;
+    if(j.avisos&&j.avisos.length) det+="  ⚠ "+j.avisos.join(" / ");
+    msg("Cruce listo ("+j.conciliados+" conciliados, "+j.diferencias+" con diferencia). "+det);
   }catch(e){ msg(e.message,true); }
   btn.disabled=false;
 }

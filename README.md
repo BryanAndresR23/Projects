@@ -43,7 +43,7 @@ concilia y qué presenta diferencia.
 ## 🖥️ App web — qué hace
 | Endpoint | Función |
 |----------|---------|
-| `GET /` | Panel de una sola página (estilo BCE oscuro): **arrastrar y soltar** (o clic) los dos `.xls`, ver tabla con semáforo, filtrar "solo diferencias", exportar e historial |
+| `GET /` | Panel de una sola página (estilo BCE oscuro): **arrastrar y soltar los dos `.xls` juntos** (la app reconoce solo cuál es BCE y cuál MEF por sus hojas), ver tabla con semáforo, filtrar "solo diferencias", exportar e historial |
 | `POST /api/conciliar` | Recibe los dos archivos, ejecuta el cruce y guarda el periodo en SQLite |
 | `POST /api/exportar` | Genera y descarga el Excel con semáforo del periodo |
 | `GET /api/historial` | Lista los periodos conciliados y su resumen |
