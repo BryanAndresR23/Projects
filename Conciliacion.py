@@ -58,6 +58,16 @@ CONCEPTOS = [
     ("Interés por Mora",     col("H"), PAGO,       col("X")),
 ]
 
+# Estructura de cada hoja del BCE. Las hojas listan el DETALLE por préstamo y
+# debajo una fila de SUBTOTAL por acreedor; la etiqueta de "Agrupación" solo
+# aparece en la PRIMERA fila de cada grupo. Por eso se arrastra la agrupación
+# hacia abajo y se suman únicamente las filas de detalle, que se reconocen
+# porque tienen un identificador de préstamo:
+#   col_grupo = columna "Agrupación"; col_ref = columna identificadora de detalle
+#   (Giros del -> No. SIGADE col C; Giros al -> No. Referencia Préstamo col H)
+HOJA_GRUPO = {DESEMBOLSO: col("E"), PAGO: col("I")}
+HOJA_REF = {DESEMBOLSO: col("C"), PAGO: col("H")}
+
 # -------------------------------------------------------------------------
 # MAPEO DE ACREEDORES  BCE (agrupación) -> MEF (organismo)
 # -------------------------------------------------------------------------
@@ -156,28 +166,29 @@ def leer_bce(ruta):
     libro = xlrd.open_workbook(ruta)
     agg = OrderedDict()
 
-    def acumula(hoja_pat, col_grupo, conceptos):
+    def acumula(hoja_pat, conceptos):
         hoja = abrir_hoja(libro, hoja_pat)
         hr = fila_encabezado(hoja, "Agrupaci")
+        col_grupo = HOJA_GRUPO[hoja_pat]
+        col_ref = HOJA_REF[hoja_pat]
+        grupo = None  # se arrastra: la etiqueta solo está en la 1ª fila del grupo
         for r in range(hr + 1, hoja.nrows):
-            grupo = str(hoja.cell_value(r, col_grupo)).strip()
-            if not grupo:
-                continue
-            # Filas de detalle: alguna columna de concepto debe ser numérica
-            valores = {nom: num(hoja.cell_value(r, cb)) for nom, cb in conceptos}
-            if not any(valores.values()):
+            etiqueta = str(hoja.cell_value(r, col_grupo)).strip()
+            if etiqueta:
+                grupo = etiqueta
+            # Solo filas de DETALLE (con identificador de préstamo); así se
+            # ignoran las filas de subtotal y se evita el doble conteo.
+            ref = str(hoja.cell_value(r, col_ref)).strip()
+            if not ref or grupo is None:
                 continue
             destino = acreedor_mef(grupo)
             fila = agg.setdefault(destino, {nom: 0.0 for nom, *_ in CONCEPTOS})
-            for nom, v in valores.items():
-                fila[nom] += v
+            for nom, cb in conceptos:
+                fila[nom] += num(hoja.cell_value(r, cb))
 
-    # Desembolsos -> Giros del Exterior, agrupación en col E
-    acumula(DESEMBOLSO, col("E"),
-            [(n, cb) for n, _, h, cb in CONCEPTOS if h == DESEMBOLSO])
-    # Pagos -> Giros al Exterior, agrupación en col I
-    acumula(PAGO, col("I"),
-            [(n, cb) for n, _, h, cb in CONCEPTOS if h == PAGO])
+    # Desembolsos -> Giros del Exterior ; Pagos -> Giros al Exterior
+    acumula(DESEMBOLSO, [(n, cb) for n, _, h, cb in CONCEPTOS if h == DESEMBOLSO])
+    acumula(PAGO, [(n, cb) for n, _, h, cb in CONCEPTOS if h == PAGO])
     return agg
 
 
@@ -199,7 +210,7 @@ def conciliar(mef, bce):
             vb = b.get(nom, 0.0)
             if vm == 0.0 and vb == 0.0:
                 continue
-            dif = round(vm - vb, 2)
+            dif = round(vm - vb, 2) or 0.0  # evita -0.0 por redondeo
             estado = "CONCILIADO" if abs(dif) <= TOLERANCIA else "DIFERENCIA"
             filas.append((ac, nom, round(vm, 2), round(vb, 2), dif, estado))
     return filas
