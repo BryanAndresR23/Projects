@@ -212,9 +212,19 @@ PANEL_HTML = r"""<!doctype html>
         padding:18px 20px;margin-bottom:20px}
   .row{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-end}
   label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px}
-  input[type=file],input[type=text]{background:#0d1218;border:1px solid var(--line);
+  input[type=text]{background:#0d1218;border:1px solid var(--line);
         color:var(--txt);border-radius:7px;padding:9px 11px;width:100%}
   .fld{flex:1;min-width:220px}
+  .drop{flex:1;min-width:260px;background:#0d1218;border:2px dashed var(--line);
+        border-radius:10px;padding:22px 16px;text-align:center;cursor:pointer;
+        transition:.15s;color:var(--muted)}
+  .drop:hover{border-color:var(--accent);color:var(--txt)}
+  .drop.over{border-color:var(--accent);background:#102132;color:var(--txt)}
+  .drop.set{border-style:solid;border-color:var(--ok);background:#10241a;color:var(--txt)}
+  .drop .big{font-size:26px;line-height:1;margin-bottom:8px}
+  .drop .ttl{font-weight:600;font-size:13px}
+  .drop .fn{margin-top:7px;font-size:12px;color:#36c172;word-break:break-all}
+  .drop input{display:none}
   button{background:var(--accent);color:#fff;border:0;border-radius:7px;
          padding:10px 18px;font-size:14px;cursor:pointer;font-weight:600}
   button:hover{filter:brightness(1.1)} button:disabled{opacity:.5;cursor:wait}
@@ -249,19 +259,27 @@ PANEL_HTML = r"""<!doctype html>
 
   <div class="card">
     <div class="row">
-      <div class="fld">
-        <label>Reporte Conciliación BCE (.xls)</label>
+      <div class="drop" id="dzBce" onclick="document.getElementById('bce').click()">
+        <div class="big">🏦</div>
+        <div class="ttl">Reporte Conciliación <b>BCE</b></div>
+        <div class="muted" style="font-size:12px">Arrastra el .xls aquí o haz clic</div>
+        <div class="fn" id="fnBce"></div>
         <input type="file" id="bce" accept=".xls,.xlsx">
       </div>
-      <div class="fld">
-        <label>Reporte Conciliación MEF (.xls)</label>
+      <div class="drop" id="dzMef" onclick="document.getElementById('mef').click()">
+        <div class="big">🏛️</div>
+        <div class="ttl">Reporte Conciliación <b>MEF</b></div>
+        <div class="muted" style="font-size:12px">Arrastra el .xls aquí o haz clic</div>
+        <div class="fn" id="fnMef"></div>
         <input type="file" id="mef" accept=".xls,.xlsx">
       </div>
-      <div class="fld" style="max-width:160px">
+    </div>
+    <div class="row" style="margin-top:16px">
+      <div class="fld" style="max-width:180px">
         <label>Periodo (AAAA-MM)</label>
         <input type="text" id="periodo" placeholder="2026-03">
       </div>
-      <button id="btn" onclick="conciliar()">Conciliar</button>
+      <button id="btn" onclick="conciliar()">Cruzar reportes</button>
     </div>
     <div id="msg"></div>
   </div>
@@ -303,10 +321,32 @@ const fmt = n => (n||0).toLocaleString("es-EC",{minimumFractionDigits:2,maximumF
 function msg(t, err){ const m=document.getElementById("msg");
   m.textContent=t; m.style.color=err?"#e15b4c":"#36c172"; }
 
+// ── Drag & drop: enlaza una zona con su <input file> ──────────────────────
+function setupDrop(dzId, inputId, fnId){
+  const dz=document.getElementById(dzId), input=document.getElementById(inputId),
+        fn=document.getElementById(fnId);
+  const valido=f=>f && /\.(xls|xlsx)$/i.test(f.name);
+  const mostrar=()=>{ const f=input.files[0];
+    if(f){ dz.classList.add("set"); fn.textContent="✓ "+f.name; }
+    else { dz.classList.remove("set"); fn.textContent=""; } };
+  input.addEventListener("change",mostrar);
+  ["dragenter","dragover"].forEach(ev=>dz.addEventListener(ev,e=>{
+    e.preventDefault(); e.stopPropagation(); dz.classList.add("over"); }));
+  ["dragleave","drop"].forEach(ev=>dz.addEventListener(ev,e=>{
+    e.preventDefault(); e.stopPropagation(); dz.classList.remove("over"); }));
+  dz.addEventListener("drop",e=>{
+    const f=e.dataTransfer.files[0];
+    if(!valido(f)){ msg("Solo se aceptan archivos .xls o .xlsx",true); return; }
+    const dt=new DataTransfer(); dt.items.add(f); input.files=dt.files; mostrar();
+  });
+}
+setupDrop("dzBce","bce","fnBce");
+setupDrop("dzMef","mef","fnMef");
+
 async function conciliar(){
   const bce=document.getElementById("bce").files[0];
   const mef=document.getElementById("mef").files[0];
-  if(!bce||!mef){ msg("Selecciona ambos archivos (.xls).",true); return; }
+  if(!bce||!mef){ msg("Carga ambos reportes (BCE y MEF) arrastrándolos o con clic.",true); return; }
   const fd=new FormData();
   fd.append("bce",bce); fd.append("mef",mef);
   fd.append("periodo",document.getElementById("periodo").value.trim());
