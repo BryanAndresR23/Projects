@@ -1,0 +1,6 @@
+# Artefactos de la app de conciliación
+conciliacion.db
+uploads_conciliacion/
+reportes_conciliacion/
+__pycache__/
+*.pyc

@@ -242,11 +242,17 @@ def reporte_xlsx(filas, ruta):
 # -------------------------------------------------------------------------
 # PROCESO PRINCIPAL
 # -------------------------------------------------------------------------
+def conciliar_archivos(ruta_bce, ruta_mef):
+    """Punto de entrada reutilizable (CLI y app web): devuelve las filas de
+    conciliación a partir de las rutas de los dos reportes."""
+    mef = leer_mef(ruta_mef)
+    bce = leer_bce(ruta_bce)
+    return conciliar(mef, bce)
+
+
 def main():
     log = [f"📅 Conciliación BCE vs MEF — {datetime.now():%Y-%m-%d %H:%M:%S}\n"]
-    mef = leer_mef(ARCHIVO_MEF)
-    bce = leer_bce(ARCHIVO_BCE)
-    filas = conciliar(mef, bce)
+    filas = conciliar_archivos(ARCHIVO_BCE, ARCHIVO_MEF)
 
     ancho = max((len(f[0]) for f in filas), default=10)
     conciliados = diferencias = 0
