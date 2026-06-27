@@ -23,8 +23,18 @@ from flask import (Flask, request, jsonify, render_template_string,
                    send_file)
 from werkzeug.utils import secure_filename
 
-# Reutilizamos la lógica de conciliación ya validada
-import Conciliacion as C
+# Reutilizamos la lógica de conciliación ya validada.
+# Debe estar Conciliacion.py en la MISMA carpeta que este archivo.
+try:
+    import Conciliacion as C
+except ModuleNotFoundError:
+    import sys
+    print("=" * 60)
+    print("  ERROR: falta 'Conciliacion.py' en esta carpeta.")
+    print("  Copia conciliacion_app.py y Conciliacion.py JUNTOS,")
+    print("  en la misma carpeta, y vuelve a ejecutar.")
+    print("=" * 60)
+    sys.exit(1)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "conciliacion.db")

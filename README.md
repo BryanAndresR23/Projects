@@ -11,11 +11,20 @@ concilia y qué presenta diferencia.
 > 🕒 Última actualización: **27/06/2026**. Este README se mantiene al día con cada cambio.
 
 ## 🚀 Cómo arrancar
-- App web: `python conciliacion_app.py` → abre http://127.0.0.1:5001/
+- **Fácil:** doble clic a **`Iniciar_Conciliacion.bat`** (instala dependencias si
+  faltan y abre la app). Deja el `.bat`, `conciliacion_app.py` y `Conciliacion.py`
+  **en la misma carpeta**.
+- Manual: `python conciliacion_app.py` → abre http://127.0.0.1:5001/
   (puerto **5001** para no chocar con el Panel SSFI, que usa el 5000).
 - Script de consola: `python Conciliacion.py` (lee dos `.xls` y genera Excel + log).
 - Dependencias: `pip install -r requirements.txt` → **flask, xlrd, openpyxl**.
-- Si ves **"Failed to fetch"** = el servidor se cerró → vuelve a lanzar `python conciliacion_app.py`.
+  - En Windows, si `python` no las encuentra:
+    `python -m pip install flask xlrd openpyxl`.
+- **`ModuleNotFoundError: No module named 'flask'`** = faltan dependencias → corre
+  el `pip install` de arriba (o usa el `.bat`, que lo hace solo).
+- **`No module named 'Conciliacion'`** = `Conciliacion.py` no está junto a la app →
+  copia ambos archivos a la misma carpeta.
+- **"Failed to fetch"** = el servidor se cerró → vuelve a lanzar la app.
 
 ## 🧩 Conceptos del cruce (por acreedor)
 | Concepto | MEF · hoja *Resumen* | BCE · hoja / columna |

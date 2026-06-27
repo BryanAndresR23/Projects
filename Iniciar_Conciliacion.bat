@@ -1,0 +1,48 @@
+@echo off
+REM ============================================================
+REM   Lanzador - Panel Conciliacion BCE vs MEF
+REM   Instala dependencias si faltan y abre la app en el navegador.
+REM   Deja este .bat en la MISMA carpeta que conciliacion_app.py
+REM   y Conciliacion.py.
+REM ============================================================
+chcp 65001 >nul
+cd /d "%~dp0"
+title Panel Conciliacion BCE vs MEF
+
+REM --- Buscar Python (python o py) ---
+set "PYEXE=python"
+where python >nul 2>nul || set "PYEXE=py"
+
+echo ============================================================
+echo   Verificando dependencias (flask, xlrd, openpyxl)...
+echo ============================================================
+%PYEXE% -c "import flask, xlrd, openpyxl" 2>nul
+if errorlevel 1 (
+    echo   Faltan dependencias. Instalando...
+    %PYEXE% -m pip install --upgrade pip
+    %PYEXE% -m pip install flask xlrd openpyxl
+)
+
+REM --- Verificar que esten los dos archivos del proyecto ---
+if not exist "conciliacion_app.py" (
+    echo.
+    echo   ERROR: no encuentro conciliacion_app.py en esta carpeta.
+    echo   Copia conciliacion_app.py y Conciliacion.py juntos aqui.
+    pause
+    exit /b 1
+)
+if not exist "Conciliacion.py" (
+    echo.
+    echo   ERROR: falta Conciliacion.py ^(la logica del cruce^).
+    echo   Debe estar en la MISMA carpeta que conciliacion_app.py.
+    pause
+    exit /b 1
+)
+
+echo.
+echo   Iniciando panel...  URL: http://127.0.0.1:5001/
+echo   (Para cerrar: cierra esta ventana o pulsa Ctrl+C)
+echo ============================================================
+%PYEXE% conciliacion_app.py
+
+pause
