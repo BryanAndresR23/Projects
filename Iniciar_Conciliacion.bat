@@ -39,6 +39,14 @@ if not exist "Conciliacion.py" (
     exit /b 1
 )
 
+REM --- Recordatorio del logo oficial del BCE (opcional) ---
+if not exist "logo_bce.png" if not exist "logo_bce.jpg" if not exist "logo_bce.svg" (
+    echo.
+    echo   NOTA: para mostrar el logo OFICIAL del BCE, guarda la imagen como
+    echo         "logo_bce.png" en esta misma carpeta. Si no esta, se usa el
+    echo         emblema por defecto. No es obligatorio.
+)
+
 echo.
 echo   Iniciando panel...  URL: http://127.0.0.1:5001/
 echo   (Para cerrar: cierra esta ventana o pulsa Ctrl+C)

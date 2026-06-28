@@ -1,0 +1,55 @@
+============================================================
+  CÓMO COLOCAR EL LOGO OFICIAL DEL BANCO CENTRAL DEL ECUADOR
+============================================================
+
+La aplicación de conciliación puede mostrar el logo OFICIAL del BCE.
+Es muy fácil: solo hay que dejar la imagen del logo en la carpeta.
+
+------------------------------------------------------------
+PASO 1 — Conseguir la imagen del logo
+------------------------------------------------------------
+Usa la imagen del logo del BCE que ya tienes (la del sol dorado con
+el texto "BANCO CENTRAL DEL ECUADOR"). Formatos aceptados:
+   - PNG  (recomendado, fondo transparente)
+   - JPG
+   - SVG
+
+------------------------------------------------------------
+PASO 2 — Renombrar el archivo
+------------------------------------------------------------
+Cambia el nombre del archivo EXACTAMENTE a uno de estos:
+   logo_bce.png      (recomendado)
+   logo_bce.jpg
+   logo_bce.svg
+
+   * Todo en minúsculas, sin espacios, sin tildes.
+   * Si Windows oculta las extensiones, asegúrate de que NO quede
+     como "logo_bce.png.png".
+
+------------------------------------------------------------
+PASO 3 — Colocarlo en la carpeta correcta
+------------------------------------------------------------
+Pega "logo_bce.png" en la MISMA carpeta donde están:
+   - conciliacion_app.py
+   - Conciliacion.py
+   - Iniciar_Conciliacion.bat
+
+------------------------------------------------------------
+PASO 4 — Abrir la aplicación
+------------------------------------------------------------
+Doble clic en  Iniciar_Conciliacion.bat
+Abre:  http://127.0.0.1:5001/
+
+El logo aparecerá automáticamente en la barra lateral y en el
+encabezado. Si ya tenías la app abierta, refresca con F5
+(o Ctrl + F5 para recargar del todo).
+
+------------------------------------------------------------
+NOTAS
+------------------------------------------------------------
+- NO es obligatorio. Si no colocas el archivo, la app usa un
+  emblema (sol dorado) por defecto; nunca se ve roto.
+- Para cambiar el logo más adelante, reemplaza "logo_bce.png"
+  por la nueva imagen (mismo nombre) y refresca con F5.
+- Tamaño sugerido: ancho de 300 a 600 px; se ajusta solo.
+============================================================
