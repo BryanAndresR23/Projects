@@ -567,6 +567,54 @@ def exportar_bce_ajustado(ruta_bce, ajustes, ruta_salida):
     return True
 
 
+def modificar_bce_xls(ruta_bce, ajustes):
+    """Agrega las filas de pago directo DENTRO del MISMO archivo .xls del BCE
+    (lo sobrescribe), en la hoja 'Giros del Exterior', resaltadas en amarillo.
+    Requiere xlutils + xlwt. Devuelve True si modificó el archivo."""
+    try:
+        from xlutils.copy import copy as xl_copy
+        import xlwt
+    except Exception:
+        return False
+    try:
+        rb = xlrd.open_workbook(ruta_bce, formatting_info=True)
+    except Exception:
+        rb = xlrd.open_workbook(ruta_bce)
+    idx = None
+    for i, sh in enumerate(rb.sheets()):
+        if "del" in sh.name.lower():
+            idx, hoja = i, sh
+            break
+    if idx is None:
+        return False
+    hr = fila_encabezado(hoja, "Agrupaci")
+    cab = _celdas_encabezado(hoja, hr)
+    c_fecha = buscar_col(cab, (["fecha"], []), 1)
+    c_sig = buscar_col(cab, SPEC_REF_DEL, 2)
+    c_ref = buscar_col(cab, (["referencia"], []), 3)
+    c_grp = buscar_col(cab, SPEC_GRUPO, 4)
+    c_prest = buscar_col(cab, (["prestamista"], []), 5)
+    c_val = buscar_col(cab, BCE_DEL_VALOR, 10)
+    c_nota = buscar_col(cab, (["nota"], []), max(hoja.ncols - 1, 6))
+
+    wb = xl_copy(rb)
+    ws = wb.get_sheet(idx)
+    estilo = xlwt.easyxf("pattern: pattern solid, fore_colour light_yellow;")
+    fecha = datetime.now().strftime("%d/%m/%Y")
+    r = hoja.nrows
+    for aj in ajustes:
+        ws.write(r, c_fecha, fecha, estilo)
+        ws.write(r, c_sig, aj.get("referencia", ""), estilo)
+        ws.write(r, c_ref, aj.get("referencia", ""), estilo)
+        ws.write(r, c_grp, aj.get("acreedor", ""), estilo)
+        ws.write(r, c_prest, aj.get("prestamista", aj.get("acreedor", "")), estilo)
+        ws.write(r, c_val, float(aj.get("valor", 0)), estilo)
+        ws.write(r, c_nota, aj.get("nota", ""), estilo)
+        r += 1
+    wb.save(ruta_bce)
+    return True
+
+
 # -------------------------------------------------------------------------
 # CONCILIACIÓN
 # -------------------------------------------------------------------------

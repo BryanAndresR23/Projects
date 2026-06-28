@@ -16,11 +16,11 @@ where python >nul 2>nul || set "PYEXE=py"
 echo ============================================================
 echo   Verificando dependencias (flask, xlrd, openpyxl)...
 echo ============================================================
-%PYEXE% -c "import flask, xlrd, openpyxl" 2>nul
+%PYEXE% -c "import flask, xlrd, openpyxl, xlutils, xlwt" 2>nul
 if errorlevel 1 (
     echo   Faltan dependencias. Instalando...
     %PYEXE% -m pip install --upgrade pip
-    %PYEXE% -m pip install flask xlrd openpyxl
+    %PYEXE% -m pip install flask xlrd openpyxl xlutils xlwt
 )
 
 REM --- Verificar que esten los dos archivos del proyecto ---

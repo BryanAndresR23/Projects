@@ -334,15 +334,15 @@ def api_aplicar_pago_directo():
                 VALUES (?,?,?,?,?,?,?,?,?)""",
              (periodo, acreedor, concepto, 0.0, valor, dif, estado, ahora, nota))
 
-    # Registrar el ajuste y regenerar el reporte BCE ajustado (descargable)
+    # Agregar la fila al MISMO archivo .xls del BCE que el usuario subió
     info = PERIODO_FILES.setdefault(periodo, {"bce": None, "mef": None, "ajustes": []})
-    info["ajustes"].append({"acreedor": acreedor, "referencia": data.get("referencia", ""),
-                            "valor": valor, "nota": nota,
-                            "prestamista": data.get("prestamista", acreedor)})
+    ajuste = {"acreedor": acreedor, "referencia": data.get("referencia", ""),
+              "valor": valor, "nota": nota,
+              "prestamista": data.get("prestamista", acreedor)}
+    info["ajustes"].append(ajuste)
     if info.get("bce") and os.path.exists(info["bce"]):
         try:
-            salida = os.path.join(EXPORT_DIR, f"Reporte_Conciliacion_BCE_{periodo}_ajustado.xlsx")
-            C.exportar_bce_ajustado(info["bce"], info["ajustes"], salida)
+            C.modificar_bce_xls(info["bce"], [ajuste])  # sobrescribe el mismo archivo
         except Exception:
             pass
 
@@ -351,13 +351,13 @@ def api_aplicar_pago_directo():
 
 @app.route("/api/descargar_bce_ajustado")
 def api_descargar_bce_ajustado():
-    """Descarga el reporte BCE con las filas de pago directo agregadas."""
+    """Descarga el MISMO archivo del BCE ya modificado con los pagos directos."""
     periodo = (request.args.get("periodo") or "").strip()
-    ruta = os.path.join(EXPORT_DIR, f"Reporte_Conciliacion_BCE_{periodo}_ajustado.xlsx")
-    if not os.path.exists(ruta):
-        return jsonify({"ok": False, "error": "Aún no hay un reporte BCE ajustado para este periodo"})
-    return send_file(ruta, as_attachment=True,
-                     download_name=f"Reporte_Conciliacion_BCE_{periodo}_ajustado.xlsx")
+    info = PERIODO_FILES.get(periodo) or {}
+    ruta = info.get("bce")
+    if not ruta or not os.path.exists(ruta):
+        return jsonify({"ok": False, "error": "No hay archivo BCE para este periodo"})
+    return send_file(ruta, as_attachment=True, download_name=os.path.basename(ruta))
 
 
 # =============================================================================
@@ -365,338 +365,314 @@ def api_descargar_bce_ajustado():
 # =============================================================================
 PANEL_HTML = r"""<!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Conciliacion Deuda Externa Publica</title>
+<title>Sistema de Conciliacion de Deuda Externa Publica</title>
 <style>
-  :root{--navy:#16315a;--blue:#2563eb;--blue2:#1d4ed8;--bg:#eef1f6;--card:#fff;--line:#e3e8f0;
-        --txt:#1f2a3d;--muted:#64748b;--ok:#16a34a;--okbg:#e9f8ef;--bad:#dc2626;--badbg:#fdeaea;
-        --gold:#d97706;--yellow:#ffd100;}
+  :root{--bg:#0a0f1f;--bg2:#0e1530;--panel:#121b36cc;--panel2:#0f1730;--line:#24314f;
+        --txt:#e9eefb;--muted:#94a3c4;--gold:#d9b572;--gold2:#f0d49a;--cyan:#5ad1e6;
+        --ok:#34d399;--okbg:#0e2b22;--bad:#f87171;--badbg:#2c1620;--blue:#3b82f6;}
   *{box-sizing:border-box}html,body{margin:0;height:100%}
-  body{display:flex;background:var(--bg);color:var(--txt);font-family:"Segoe UI",system-ui,sans-serif;font-size:14px}
-  .side{width:250px;flex:none;background:linear-gradient(180deg,var(--navy),#102241);color:#dce5f5;display:flex;flex-direction:column;min-height:100vh}
-  .brand{padding:20px;border-bottom:1px solid #ffffff1a}.brand .flag{font-size:26px}
-  .brand h2{margin:8px 0 2px;font-size:15px;letter-spacing:.5px;color:#fff}.brand small{color:#9fb3d4;font-size:11px}
-  .nav{padding:12px 10px}.nav .it{display:flex;gap:11px;align-items:center;padding:11px;border-radius:10px;cursor:pointer;color:#c6d4ec;margin-bottom:4px}
-  .nav .it:hover{background:#ffffff12}.nav .it.act{background:#ffffff1a;color:#fff}
-  .nav .it.dis{opacity:.45;cursor:not-allowed}
-  .nav .it .num{width:25px;height:25px;border-radius:50%;flex:none;display:grid;place-items:center;font-size:12px;font-weight:800;background:#ffffff1f;color:#fff}
-  .nav .it.act .num{background:var(--yellow);color:#16315a}.nav .it .tt{font-weight:600;font-size:13px}.nav .it .ss{font-size:10.5px;color:#9fb3d4}
-  .perbox{margin:6px 14px;padding:9px 12px;background:#ffffff14;border-radius:8px;text-align:center;font-weight:700;color:#fff;font-size:13px}
-  .estado{padding:14px 18px;border-top:1px solid #ffffff1a;font-size:12px;margin-top:auto}
-  .estado .h{color:#9fb3d4;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;font-size:10.5px}
-  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px}
-  .dot.ok{background:#34d399}.dot.bad{background:#f87171}
-  .estado .e{margin-bottom:5px}
+  body{display:flex;min-height:100vh;color:var(--txt);font-family:"Segoe UI",system-ui,sans-serif;font-size:14px;
+       background:radial-gradient(1200px 700px at 0% -10%,#16224a 0%,transparent 55%),
+                  radial-gradient(1000px 600px at 100% 0%,#0c2a3a 0%,transparent 50%),
+                  linear-gradient(180deg,var(--bg),var(--bg2));}
+  .side{width:266px;flex:none;background:linear-gradient(180deg,#0c1430,#0a0f22);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:100vh}
+  .brand{padding:24px 22px 20px;border-bottom:1px solid var(--line);text-align:center}
+  .brand .crest{width:50px;height:50px;margin:0 auto 10px;border-radius:14px;display:grid;place-items:center;font-size:26px;
+        background:linear-gradient(135deg,#1a2murl);background:linear-gradient(135deg,#26345e,#16203f);border:1px solid var(--gold);box-shadow:0 6px 20px #0006}
+  .brand h2{margin:0;font-size:14px;letter-spacing:1.5px;color:var(--gold2);font-weight:700}
+  .brand .ln{height:2px;width:46px;margin:8px auto;background:linear-gradient(90deg,transparent,var(--gold),transparent)}
+  .brand small{color:var(--muted);font-size:11px;letter-spacing:.3px}
+  .nav{padding:16px 12px;flex:1}
+  .nav .it{display:flex;gap:13px;align-items:center;padding:13px 13px;border-radius:12px;cursor:pointer;color:#b9c4e0;margin-bottom:6px;transition:.15s;border:1px solid transparent}
+  .nav .it:hover{background:#ffffff0a}
+  .nav .it.act{background:linear-gradient(90deg,#1b2banchor,#16203f00);background:#16203f;border-color:var(--line);color:#fff}
+  .nav .it.act{box-shadow:inset 3px 0 0 var(--gold)}
+  .nav .it.dis{opacity:.4;cursor:not-allowed}
+  .nav .it .num{width:30px;height:30px;border-radius:9px;flex:none;display:grid;place-items:center;font-size:13px;font-weight:800;background:#1c2950;color:var(--gold2);border:1px solid var(--line)}
+  .nav .it.act .num{background:var(--gold);color:#10182f;border-color:transparent}
+  .nav .it .tt{font-weight:600;font-size:13.5px}.nav .it .ss{font-size:10.5px;color:var(--muted)}
+  .perbox{margin:8px 16px;padding:11px;border:1px solid var(--gold);border-radius:11px;text-align:center;color:var(--gold2);font-weight:700;font-size:13px;background:#1a223f;display:none}
+  .estado{padding:16px 20px;border-top:1px solid var(--line);font-size:12px}
+  .estado .h{color:var(--gold2);text-transform:uppercase;letter-spacing:1px;margin-bottom:9px;font-size:10px}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:8px}.dot.ok{background:var(--ok);box-shadow:0 0 6px var(--ok)}.dot.bad{background:var(--bad);box-shadow:0 0 6px var(--bad)}
+  .estado .e{margin-bottom:6px;color:#c3cde6}
   .main{flex:1;min-width:0;display:flex;flex-direction:column}
-  .top{background:#fff;border-bottom:1px solid var(--line);padding:13px 26px;display:flex;align-items:center;justify-content:space-between}
-  .top h1{margin:0;font-size:16px;color:var(--navy)}.top .right{display:flex;gap:12px;align-items:center}
-  .badge{background:#dbe5fb;color:var(--blue2);padding:5px 12px;border-radius:999px;font-size:12px;font-weight:700}
-  .badge.ok{background:var(--okbg);color:var(--ok)}
-  .uchip{display:flex;align-items:center;gap:8px}.uav{width:30px;height:30px;border-radius:50%;background:var(--navy);color:#fff;display:grid;place-items:center;font-size:12px;font-weight:800}
-  .content{padding:24px 26px;overflow:auto}
-  h3.sec{display:flex;align-items:center;gap:10px;color:var(--navy);margin:0 0 4px}.sub{color:var(--muted);margin:0 0 18px;font-size:13px}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;margin-bottom:18px;box-shadow:0 1px 3px #0f172a0d}
-  .info{border-left:4px solid var(--blue);background:#f3f7ff;border-radius:8px;padding:11px 15px;margin-bottom:18px;font-size:12.5px}
-  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}@media(max-width:820px){.grid2{grid-template-columns:1fr}}
-  .drop{border:2px dashed var(--line);border-radius:14px;padding:24px 16px;text-align:center;background:#fafbfe}
-  .drop.over{border-color:var(--blue);background:#eef4ff}.drop.set{border-color:var(--ok);background:var(--okbg)}
-  .drop .ic{font-size:32px}.drop .ti{font-weight:700;font-size:15px;margin-top:8px;color:var(--navy)}.drop .de{color:var(--muted);font-size:12px}
-  .drop .dz{color:var(--muted);font-size:12px;margin-top:9px}.drop .fn{margin-top:8px;font-size:12px;color:var(--ok);font-weight:600;word-break:break-all}
-  .drop .btn-sel{margin-top:14px;border-top:1px solid var(--line);padding-top:12px}.lnk{color:var(--blue);font-weight:700;cursor:pointer;font-size:14px;background:none;border:0}.lnk:hover{text-decoration:underline}
+  .top{padding:18px 30px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);background:#0b122699}
+  .top h1{margin:0;font-size:16px;font-weight:600;letter-spacing:.3px}.top h1 b{color:var(--gold2)}
+  .top .right{display:flex;gap:14px;align-items:center}
+  .badge{padding:6px 14px;border-radius:999px;font-size:12px;font-weight:700;border:1px solid var(--line);color:var(--muted)}
+  .badge.set{border-color:var(--gold);color:var(--gold2);background:#1a223f}.badge.ok{border-color:var(--ok);color:var(--ok);background:var(--okbg)}
+  .uchip{display:flex;gap:9px;align-items:center;color:var(--muted)}.uav{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--gold),#b8924a);color:#10182f;display:grid;place-items:center;font-weight:800}
+  .content{padding:28px 30px;overflow:auto}
+  h3.sec{display:flex;align-items:center;gap:11px;margin:0 0 5px;font-size:19px;font-weight:600}
+  h3.sec .bar{width:5px;height:22px;border-radius:3px;background:linear-gradient(180deg,var(--gold),#9c7b3e)}
+  .sub{color:var(--muted);margin:0 0 22px;font-size:13px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:24px;margin-bottom:20px;backdrop-filter:blur(8px);box-shadow:0 12px 30px #00000035}
+  .drop{border:2px dashed #35466e;border-radius:16px;padding:46px 22px;text-align:center;cursor:pointer;transition:.18s;background:#0e1730}
+  .drop:hover{border-color:var(--gold);background:#121c3a}.drop.over{border-color:var(--cyan);background:#10243a}
+  .drop.set{border-style:solid;border-color:var(--ok)}
+  .drop .ic{font-size:42px;margin-bottom:6px}.drop .ti{font-size:17px;font-weight:600;color:var(--gold2)}.drop .de{color:var(--muted);font-size:13px;margin-top:6px}
+  .drop .fl{margin-top:14px;display:flex;flex-direction:column;gap:6px;align-items:center}
+  .chipf{background:#16203f;border:1px solid var(--line);border-radius:999px;padding:6px 14px;font-size:12.5px;color:#cdd8f0}
+  .chipf.mef{border-color:#5aa9e6}.chipf.bce{border-color:var(--gold)}
   input[type=file]{display:none}
   .footbar{display:flex;align-items:center;justify-content:space-between;gap:16px}
-  .btn{background:linear-gradient(135deg,var(--blue),var(--blue2));color:#fff;border:0;border-radius:10px;padding:11px 20px;font-size:14px;font-weight:800;cursor:pointer;box-shadow:0 6px 16px #2563eb40}
-  .btn:hover{filter:brightness(1.07)}.btn:disabled{opacity:.5;cursor:not-allowed;box-shadow:none}
-  .btn.alt{background:#fff;color:var(--blue);border:1px solid #c7d6f5;box-shadow:none}
-  .frow{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end}.fld label{display:block;font-size:11px;color:var(--muted);font-weight:700;margin-bottom:6px}
-  input[type=text],input[type=number]{border:1px solid var(--line);border-radius:9px;padding:9px 11px;font-size:14px;background:#fff;color:var(--txt)}
-  .mtable{width:100%;border-collapse:collapse;font-size:12.5px}
-  .mtable th,.mtable td{padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
-  .mtable thead th{background:var(--navy);color:#fff;text-align:center;font-size:11px;position:sticky;top:0}
-  .mtable thead tr.sub th{background:#22416e;font-weight:600;font-size:10px;color:#cfe0f5}
-  .mtable thead th.acr,.mtable thead th.est{background:#0f2545;text-align:left;vertical-align:middle}
-  .mtable td.acr{font-weight:700;color:var(--navy)}.mtable td.num{text-align:right;font-variant-numeric:tabular-nums}
-  .mtable td.d{color:var(--bad);font-weight:700;text-align:right}.mtable td.d.ok{color:var(--ok)}
-  .mtable tr.ok td.acr,.mtable tr.ok td.est{background:#f0fbf4}.mtable tr.bad td.acr,.mtable tr.bad td.est{background:#fdf2f2}
-  .mtable td.sep{border-left:1px solid #e7ecf4}
-  .mtable tr.tot td{background:var(--navy);color:#fff;font-weight:800;border:0}
-  .mtable tr.tot td.d{color:#ffd9d9}.mtable tr.tot td.d.ok{color:#9af0c0}
-  .est-pill{padding:3px 9px;border-radius:999px;font-size:10.5px;font-weight:800}
-  .est-pill.ok{background:var(--okbg);color:var(--ok)}.est-pill.bad{background:#fef3c7;color:#92400e}
-  .scrollx{overflow:auto;border:1px solid var(--line);border-radius:12px;max-height:600px}
-  .hidden{display:none}#msg{font-size:13px;margin-top:8px}
-  .note-ok{background:#ecfdf3;border:1px solid #bbf7d0;color:#166534;border-radius:12px;padding:22px;text-align:center;font-size:15px;font-weight:700}
-  .note-warn{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:12px;padding:18px;font-size:13.5px}
-  .diaghead{background:var(--navy);color:#fff;border-radius:12px;padding:13px 16px;margin-bottom:14px;font-weight:700}
-  .diaghead small{display:block;color:#9fb3d4;font-weight:400;font-size:11.5px;margin-top:2px}
-  .dcard{background:#fff;border:1px solid var(--line);border-radius:12px;padding:15px;margin-bottom:12px}
-  .dcard.pd{background:#fffbeb;border-color:#fde68a}.dcard.dc{background:#eff6ff;border-color:#bfdbfe}
-  .dcard .dh{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:9px}.dcard .dname{font-weight:800;color:var(--navy)}
-  .dtag{padding:3px 9px;border-radius:999px;font-size:10.5px;font-weight:700}.dtag.pd{background:#fef3c7;color:#92400e}.dtag.dc{background:#dbeafe;color:#1e40af}.dtag.ot{background:#f1f5f9;color:#475569}
+  .btn{background:linear-gradient(135deg,var(--gold),#c69a4f);color:#10182f;border:0;border-radius:11px;padding:13px 26px;font-size:14px;font-weight:800;cursor:pointer;box-shadow:0 8px 22px #d9b57240;letter-spacing:.3px}
+  .btn:hover{filter:brightness(1.07)}.btn:disabled{opacity:.4;cursor:not-allowed;box-shadow:none}
+  .btn.alt{background:transparent;color:var(--gold2);border:1px solid var(--gold)}
+  .btn.gh{background:transparent;color:var(--txt);border:1px solid var(--line)}
+  .info{border-left:3px solid var(--gold);background:#121c3a;border-radius:10px;padding:12px 16px;margin-bottom:20px;font-size:12.5px;color:#c7d2ea}
+  .frow{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end}.fld label{display:block;font-size:11px;color:var(--muted);font-weight:700;margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px}
+  input[type=text],input[type=number]{background:#0c1428;border:1px solid var(--line);color:var(--txt);border-radius:9px;padding:10px 12px;font-size:14px}
+  /* Matriz */
+  .scrollx{overflow:auto;border:1px solid var(--line);border-radius:14px;max-height:620px;background:#0c1326}
+  .mtable{width:100%;border-collapse:separate;border-spacing:0;font-size:12.5px;min-width:980px}
+  .mtable th,.mtable td{padding:11px 12px;white-space:nowrap;border-bottom:1px solid #1c2746}
+  .mtable thead th{position:sticky;top:0;background:#101a36;color:var(--gold2);text-align:center;font-size:11px;text-transform:uppercase;letter-spacing:.6px;z-index:2}
+  .mtable thead tr.sub th{top:38px;background:#0e1730;color:#9fb0d6;font-size:10px;font-weight:600;letter-spacing:.3px}
+  .mtable thead th.acr,.mtable thead th.est{left:0;text-align:left;vertical-align:middle;background:#101a36}
+  .mtable th.acr{left:0;z-index:3}
+  .mtable td.acr{font-weight:700;color:#fff;position:sticky;left:0;background:#0e1730;z-index:1}
+  .mtable td.num{text-align:right;font-variant-numeric:tabular-nums;color:#dbe3f5}
+  .mtable td.d{text-align:right;font-weight:700;color:var(--bad)}.mtable td.d.ok{color:var(--ok)}
+  .mtable td.sep{border-left:1px solid #1c2746}
+  .mtable tbody tr:hover td{background:#13203f}
+  .mtable tbody tr:hover td.acr{background:#16213f}
+  .mtable tr.bad td.acr{box-shadow:inset 3px 0 0 var(--bad)}.mtable tr.ok td.acr{box-shadow:inset 3px 0 0 var(--ok)}
+  .mtable tr.tot td{background:#101a36;color:var(--gold2);font-weight:800;border-top:2px solid var(--gold);position:sticky;bottom:0}
+  .mtable tr.tot td.acr{background:#101a36}.mtable tr.tot td.d{color:#ffd9d9}.mtable tr.tot td.d.ok{color:var(--ok)}
+  .est-pill{padding:4px 11px;border-radius:999px;font-size:10.5px;font-weight:800;letter-spacing:.3px}
+  .est-pill.ok{background:var(--okbg);color:var(--ok);border:1px solid #1c5b44}.est-pill.bad{background:var(--badbg);color:var(--bad);border:1px solid #5b2230}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px}@media(max-width:860px){.stats{grid-template-columns:repeat(2,1fr)}}
+  .stat{background:#101a36;border:1px solid var(--line);border-radius:13px;padding:15px 17px}.stat .n{font-size:24px;font-weight:800}.stat .l{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+  .stat.ok .n{color:var(--ok)}.stat.bad .n{color:var(--bad)}.stat.gold .n{color:var(--gold2)}
+  .note-ok{background:linear-gradient(135deg,#0e2b22,#10243a);border:1px solid #1c5b44;color:#8ef0c4;border-radius:14px;padding:24px;text-align:center;font-size:15px;font-weight:600}
+  .note-warn{background:#241a10;border:1px solid #6b4e1f;color:#f0cd8f;border-radius:14px;padding:18px;font-size:13.5px}
+  .hidden{display:none}#msg{font-size:13px;margin-top:10px}
+  .diaghead{background:#101a36;border:1px solid var(--line);border-radius:13px;padding:14px 17px;margin-bottom:14px;font-weight:700;color:var(--gold2)}
+  .diaghead small{display:block;color:var(--muted);font-weight:400;font-size:11.5px;margin-top:2px}
+  .dcard{background:#101a36;border:1px solid var(--line);border-radius:13px;padding:16px;margin-bottom:12px}
+  .dcard.pd{border-color:#6b4e1f}.dcard.dc{border-color:#28507a}
+  .dcard .dh{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:9px}.dcard .dname{font-weight:800;color:#fff}
+  .dtag{padding:3px 10px;border-radius:999px;font-size:10.5px;font-weight:700}.dtag.pd{background:#3a2c10;color:#f0cd8f}.dtag.dc{background:#10283f;color:#7fc2ec}.dtag.ot{background:#1c2746;color:#a7b4d4}
   .dmonto{margin-left:auto;color:var(--bad);font-weight:800;font-size:12.5px}
-  .dobs{background:#fff;border:1px solid var(--line);border-radius:8px;padding:8px 11px;font-size:12px;margin-bottom:9px}
-  .dgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}@media(max-width:760px){.dgrid{grid-template-columns:1fr}}
-  .dbox{background:#fff;border:1px solid var(--line);border-radius:8px;padding:9px 11px}.dbox .bt{font-size:10.5px;font-weight:800;text-transform:uppercase;margin-bottom:3px}.dbox.why .bt{color:#b45309}.dbox.act .bt{color:var(--ok)}.dbox .bd{font-size:12px;color:#334155}
-  textarea{width:100%;height:440px;border:1px solid var(--line);border-radius:10px;padding:13px;font-family:Consolas,monospace;font-size:12.5px;color:var(--txt);background:#fcfdff}
+  .dobs{background:#0c1428;border:1px solid var(--line);border-radius:9px;padding:9px 12px;font-size:12px;margin-bottom:10px;color:#c7d2ea}
+  .dgrid{display:grid;grid-template-columns:1fr 1fr;gap:11px}@media(max-width:760px){.dgrid{grid-template-columns:1fr}}
+  .dbox{background:#0c1428;border:1px solid var(--line);border-radius:9px;padding:10px 12px}.dbox .bt{font-size:10px;font-weight:800;text-transform:uppercase;margin-bottom:4px;letter-spacing:.4px}.dbox.why .bt{color:#f0cd8f}.dbox.act .bt{color:var(--ok)}.dbox .bd{font-size:12px;color:#c7d2ea}
+  textarea{width:100%;height:440px;background:#0c1428;border:1px solid var(--line);border-radius:11px;padding:14px;font-family:Consolas,monospace;font-size:12.5px;color:#dbe3f5}
+  .muted{color:var(--muted)}
 </style></head>
 <body>
   <aside class="side">
-    <div class="brand"><div class="flag">&#127466;&#127464;</div><h2>CONCILIACION<br>DEUDA EXTERNA</h2><small>Subgerencia de Deuda Publica</small></div>
+    <div class="brand"><div class="crest">&#127963;&#65039;</div>
+      <h2>CONCILIACION DE DEUDA</h2><div class="ln"></div>
+      <small>Banco Central del Ecuador<br>Servicios Financieros Internacionales</small></div>
     <nav class="nav" id="nav">
-      <div class="it act" data-v="cargar"><div class="num">1</div><div><div class="tt">Cargar Reportes</div><div class="ss">MEF + BCE</div></div></div>
-      <div class="it" data-v="resultados"><div class="num">2</div><div><div class="tt">Resultados de Conciliacion</div><div class="ss">Detalle por cartera</div></div></div>
-      <div class="it" data-v="ajustes"><div class="num">3</div><div><div class="tt">Ajuste - Observaciones</div><div class="ss">Solo si no concilia</div></div></div>
-      <div class="it" data-v="quipux"><div class="num">4</div><div><div class="tt">Generar Quipux</div><div class="ss">Si todo concilia</div></div></div>
+      <div class="it act" data-v="cargar"><div class="num">I</div><div><div class="tt">Recepcion de Reportes</div><div class="ss">MEF &middot; BCE</div></div></div>
+      <div class="it" data-v="resultados"><div class="num">II</div><div><div class="tt">Conciliacion de Carteras</div><div class="ss">Cruce y resultados</div></div></div>
+      <div class="it" data-v="ajustes"><div class="num">III</div><div><div class="tt">Gestion de Observaciones</div><div class="ss">Ajustes y pagos directos</div></div></div>
+      <div class="it" data-v="quipux"><div class="num">IV</div><div><div class="tt">Emision del Oficio</div><div class="ss">Quipux de respuesta</div></div></div>
     </nav>
-    <div class="perbox" id="perBox" style="display:none"></div>
-    <div class="estado"><div class="h">Estado de carteras</div><div id="estadoSide" style="color:#9fb3d4">Sin datos</div></div>
+    <div class="perbox" id="perBox"></div>
+    <div class="estado"><div class="h">Estado de carteras</div><div id="estadoSide" style="color:var(--muted)">Sin datos</div></div>
   </aside>
   <div class="main">
-    <div class="top"><h1>Sistema de Conciliacion &ndash; Deuda Externa Publica</h1>
-      <div class="right"><span class="badge" id="periodoBadge">Sin periodo</span>
-        <span class="uchip"><span class="uav">U</span><span class="muted">Usuario</span></span></div></div>
+    <div class="top"><h1>Sistema de Conciliacion de <b>Deuda Externa Publica</b></h1>
+      <div class="right"><span class="badge" id="periodoBadge">Periodo no detectado</span>
+        <span class="uchip"><span class="uav">U</span>Usuario</span></div></div>
     <div class="content">
 
       <section id="v-cargar">
-        <h3 class="sec">&#128193; Cargar Reportes MEF + BCE</h3>
-        <p class="sub">Arrastra los reportes o usa los botones. El periodo se detecta automaticamente del archivo. Soporta .xls y .xlsx</p>
-        <div class="info"><b>Mapeo:</b> Desembolsos (MEF C &harr; BCE K) &middot; Amortizaciones (D &harr; U) &middot; Intereses (E &harr; V) &middot; Comisiones (F &harr; W) &middot; Condonados (G &harr; Y) &middot; Mora (H &harr; X)</div>
-        <div class="grid2">
-          <div class="drop" id="dzMef" ondrop="onDrop(event,'mef')" ondragover="onOver(event)" ondragleave="onLeave(event)">
-            <div class="ic">&#127963;&#65039;</div><div class="ti">Reporte MEF</div><div class="de">Ministerio de Economia y Finanzas</div>
-            <div class="dz">&#128229; Arrastra aqui o haz clic</div><div class="fn" id="fnMef"></div>
-            <div class="btn-sel"><button class="lnk" onclick="document.getElementById('fileMef').click()">&#128193; Seleccionar archivo MEF</button></div>
-            <input type="file" id="fileMef" accept=".xls,.xlsx" onchange="onPick(this,'mef')"></div>
-          <div class="drop" id="dzBce" ondrop="onDrop(event,'bce')" ondragover="onOver(event)" ondragleave="onLeave(event)">
-            <div class="ic">&#127974;</div><div class="ti">Reporte BCE</div><div class="de">Banco Central del Ecuador</div>
-            <div class="dz">&#128229; Arrastra aqui o haz clic</div><div class="fn" id="fnBce"></div>
-            <div class="btn-sel"><button class="lnk" onclick="document.getElementById('fileBce').click()">&#128193; Seleccionar archivo BCE</button></div>
-            <input type="file" id="fileBce" accept=".xls,.xlsx" onchange="onPick(this,'bce')"></div>
+        <h3 class="sec"><span class="bar"></span>Recepcion de Reportes</h3>
+        <p class="sub">Cargue los reportes de conciliacion del MEF y del BCE en una sola zona. El periodo se reconoce automaticamente y los calculos se realizan sin depender del orden de columnas o filas.</p>
+        <div class="card">
+          <div class="drop" id="dz" onclick="document.getElementById('files').click()" ondrop="onDrop(event)" ondragover="onOver(event)" ondragleave="onLeave(event)">
+            <div class="ic">&#128228;</div>
+            <div class="ti">Arrastre aqui los dos reportes &mdash; MEF y BCE</div>
+            <div class="de">o haga clic para seleccionarlos &middot; no importa el orden, el sistema reconoce cada uno &middot; .xls .xlsx</div>
+            <div class="fl" id="fnList"></div>
+            <input type="file" id="files" accept=".xls,.xlsx" multiple onchange="recibir(this.files)">
+          </div>
         </div>
-        <div class="card footbar"><span class="muted" id="cargarMsg">Carga ambos archivos para continuar.</span>
-          <button class="btn" id="btnRun" onclick="ejecutar()" disabled>&#9654; Ejecutar Conciliacion</button></div>
+        <div class="card footbar"><span class="muted" id="cargarMsg">Cargue ambos reportes para continuar.</span>
+          <button class="btn" id="btnRun" onclick="ejecutar()" disabled>Ejecutar Conciliacion &rarr;</button></div>
         <div id="msg"></div>
       </section>
 
       <section id="v-resultados" class="hidden">
-        <h3 class="sec">&#128202; Resultados de Conciliacion</h3>
+        <h3 class="sec"><span class="bar"></span>Conciliacion de Carteras</h3>
         <p class="sub" id="resSub">&mdash;</p>
         <div id="resAlert"></div>
-        <div class="card"><div class="scrollx"><table class="mtable" id="mtable"></table></div></div>
+        <div class="card"><div class="stats" id="stats"></div>
+          <div class="scrollx"><table class="mtable" id="mtable"></table></div></div>
       </section>
 
       <section id="v-ajustes" class="hidden">
-        <h3 class="sec">&#9881;&#65039; Ajuste - Observaciones Conciliacion</h3>
-        <p class="sub">Solo aplica cuando una o mas carteras no concilian.</p>
+        <h3 class="sec"><span class="bar"></span>Gestion de Observaciones</h3>
+        <p class="sub">Se habilita unicamente cuando una o mas carteras no concilian.</p>
         <div id="ajContenido"></div>
       </section>
 
       <section id="v-quipux" class="hidden">
-        <h3 class="sec">&#128220; Generar Quipux de respuesta</h3>
+        <h3 class="sec"><span class="bar"></span>Emision del Oficio de Respuesta</h3>
         <div id="quipuxContenido"></div>
       </section>
     </div>
   </div>
 <script>
 const CONCEPTOS=["Desembolsos","Amortizaciones","Intereses","Comisiones","Intereses Condonados","Interés por Mora"];
-const COLMAP={"Desembolsos":["C","K"],"Amortizaciones":["D","U"],"Intereses":["E","V"],"Comisiones":["F","W"],"Intereses Condonados":["G","Y"],"Interés por Mora":["H","X"]};
 const RUBRO_TXT={"Desembolsos":"desembolsos","Amortizaciones":"amortizaciones","Intereses":"intereses","Comisiones":"comisiones","Intereses Condonados":"condonados","Interés por Mora":"intereses por mora"};
 const CARTERA_TXT={"AMAZON DAC":"AMAZON"};
 const ORDEN_QUIPUX=["AIIB","AMAZON DAC","BANCOS","BID","BIRF","BONOS","CAF","FIDA","FLAR","FMI","GOBIERNOS","GPS"];
-let FILES={mef:null,bce:null}, DATA=[], TOTALES=[], GTOT=null, DIAG=[], INFO=null, RES=null, PERIODO="";
+let FILES=[], DATA=[], TOTALES=[], GTOT=null, DIAG=[], INFO=null, RES=null, PERIODO="";
 const fmt=n=>(n||0).toLocaleString("es-EC",{minimumFractionDigits:2,maximumFractionDigits:2});
-function msg(t,err){const m=document.getElementById("msg");m.textContent=t;m.style.color=err?"#dc2626":"#16a34a";}
+function msg(t,err){const m=document.getElementById("msg");m.textContent=t;m.style.color=err?"#f87171":"#34d399";}
 const valido=f=>f&&/\.(xls|xlsx)$/i.test(f.name);
-function recibir(f,lado){if(!valido(f)){alert("Solo .xls o .xlsx");return;}FILES[lado]=f;
-  document.getElementById(lado==="mef"?"fnMef":"fnBce").textContent="✓ "+f.name;
-  document.getElementById(lado==="mef"?"dzMef":"dzBce").classList.add("set");
-  const ok=FILES.mef&&FILES.bce;document.getElementById("btnRun").disabled=!ok;
-  document.getElementById("cargarMsg").textContent=ok?"Listo para conciliar.":"Carga ambos archivos para continuar.";}
-function onPick(i,l){if(i.files[0])recibir(i.files[0],l);}
+function recibir(files){[...files].forEach(f=>{if(valido(f)&&FILES.length<2&&!FILES.some(x=>x.name===f.name))FILES.push(f);});pintarFiles();}
+function pintarFiles(){
+  const c=document.getElementById("fnList");
+  c.innerHTML=FILES.map((f,i)=>`<span class="chipf">&#128196; ${f.name} <a onclick="quitar(${i});event.stopPropagation()" style="cursor:pointer;color:#f87171">&times;</a></span>`).join("");
+  document.getElementById("dz").classList.toggle("set",FILES.length>=2);
+  document.getElementById("btnRun").disabled=FILES.length<2;
+  document.getElementById("cargarMsg").textContent=FILES.length>=2?"Listo para conciliar.":"Cargue ambos reportes para continuar.";
+}
+function quitar(i){FILES.splice(i,1);pintarFiles();}
 function onOver(e){e.preventDefault();e.currentTarget.classList.add("over");}
 function onLeave(e){e.currentTarget.classList.remove("over");}
-function onDrop(e,l){e.preventDefault();e.currentTarget.classList.remove("over");const f=e.dataTransfer.files[0];if(f)recibir(f,l);}
+function onDrop(e){e.preventDefault();e.currentTarget.classList.remove("over");recibir(e.dataTransfer.files);}
 
 async function ejecutar(){
-  if(!(FILES.mef&&FILES.bce))return;
-  const fd=new FormData();fd.append("archivos",FILES.mef);fd.append("archivos",FILES.bce);
+  if(FILES.length<2)return;
+  const fd=new FormData();FILES.forEach(f=>fd.append("archivos",f));
   const btn=document.getElementById("btnRun");btn.disabled=true;msg("Procesando...");
   try{const j=await (await fetch("/api/conciliar",{method:"POST",body:fd})).json();
     if(!j.ok){msg(j.error||"Error",true);btn.disabled=false;return;}
-    aplicarResultado(j);msg("Conciliacion lista para "+(INFO?INFO.texto:PERIODO)+".");irA("resultados");
-  }catch(e){msg(e.message,true);}
-  btn.disabled=false;
+    aplicarResultado(j);msg("Conciliacion ejecutada para "+(INFO?INFO.texto:PERIODO)+".");irA("resultados");
+  }catch(e){msg(e.message,true);}btn.disabled=false;
 }
 function aplicarResultado(j){
   RES=j;DATA=j.registros;TOTALES=j.totales||[];GTOT=j.gran_total;DIAG=j.diagnostico||[];INFO=j.info_periodo||INFO;PERIODO=j.periodo;
-  document.getElementById("periodoBadge").textContent=INFO?INFO.texto:PERIODO;
-  document.getElementById("periodoBadge").className="badge "+(j.conciliado_total?"ok":"");
-  const pb=document.getElementById("perBox");pb.style.display="block";pb.textContent=(INFO?INFO.texto:PERIODO);
-  pintarSidebar();pintarMatriz();pintarAjustes();pintarQuipux();actualizarNav();
+  const pb=document.getElementById("periodoBadge");pb.textContent=INFO?INFO.texto:PERIODO;pb.className="badge "+(j.conciliado_total?"ok":"set");
+  const px=document.getElementById("perBox");px.style.display="block";px.textContent=INFO?INFO.texto:PERIODO;
+  pintarSidebar();pintarMatriz();pintarAjustes();pintarQuipux();
+  document.querySelector('.nav .it[data-v="quipux"]').classList.toggle("dis",!(RES&&RES.conciliado_total));
 }
-function actualizarNav(){
-  const it3=document.querySelector('.nav .it[data-v="ajustes"]');
-  const it4=document.querySelector('.nav .it[data-v="quipux"]');
-  it4.classList.toggle("dis",!(RES&&RES.conciliado_total));
-}
-function pintarSidebar(){
-  const es=document.getElementById("estadoSide");
-  if(!TOTALES.length){es.textContent="Sin datos";return;}
-  es.innerHTML=TOTALES.map(t=>`<div class="e"><span class="dot ${t.estado==='CONCILIADO'?'ok':'bad'}"></span>${CARTERA_TXT[t.acreedor]||t.acreedor}</div>`).join("");
-}
+function pintarSidebar(){const es=document.getElementById("estadoSide");
+  es.innerHTML=TOTALES.length?TOTALES.map(t=>`<div class="e"><span class="dot ${t.estado==='CONCILIADO'?'ok':'bad'}"></span>${CARTERA_TXT[t.acreedor]||t.acreedor}</div>`).join(""):"Sin datos";}
 function pintarMatriz(){
-  const piv={};DATA.forEach(r=>{(piv[r.acreedor]=piv[r.acreedor]||{})[r.concepto]={mef:r.mef,bce:r.bce,dif:r.diferencia,estado:r.estado};});
+  const piv={};DATA.forEach(r=>{(piv[r.acreedor]=piv[r.acreedor]||{})[r.concepto]={mef:r.mef,bce:r.bce,dif:r.diferencia};});
   const estado={};TOTALES.forEach(t=>estado[t.acreedor]=t.estado);
-  const orden=TOTALES.map(t=>t.acreedor);
   let h=`<thead><tr><th class="acr" rowspan="2">Acreedor</th><th class="est" rowspan="2">Estado</th>`;
   CONCEPTOS.forEach(c=>h+=`<th colspan="3" class="sep">${c}</th>`);
-  h+=`</tr><tr class="sub">`;
-  CONCEPTOS.forEach(c=>{h+=`<th class="sep">MEF<br>Col ${COLMAP[c][0]}</th><th>BCE<br>Col ${COLMAP[c][1]}</th><th>&Delta;</th>`;});
+  h+=`</tr><tr class="sub">`;CONCEPTOS.forEach(()=>h+=`<th class="sep">MEF</th><th>BCE</th><th>&Delta;</th>`);
   h+=`</tr></thead><tbody>`;
-  orden.forEach(ac=>{
-    const ok=estado[ac]==="CONCILIADO";
-    h+=`<tr class="${ok?'ok':'bad'}"><td class="acr">${CARTERA_TXT[ac]||ac}</td>
-        <td class="est"><span class="est-pill ${ok?'ok':'bad'}">${ok?'✔ OK':'⚠ DIF'}</span></td>`;
+  TOTALES.map(t=>t.acreedor).forEach(ac=>{const ok=estado[ac]==="CONCILIADO";
+    h+=`<tr class="${ok?'ok':'bad'}"><td class="acr">${CARTERA_TXT[ac]||ac}</td><td><span class="est-pill ${ok?'ok':'bad'}">${ok?'CONCILIADO':'DIFERENCIA'}</span></td>`;
     CONCEPTOS.forEach(c=>{const d=piv[ac]&&piv[ac][c];
-      if(!d){h+=`<td class="num sep muted">—</td><td class="num muted">—</td><td class="d ok">✓</td>`;}
-      else{const z=Math.abs(d.dif)<0.005;
-        h+=`<td class="num sep">${fmt(d.mef)}</td><td class="num">${fmt(d.bce)}</td>
-            <td class="d ${z?'ok':''}">${z?'✓':'+'+fmt(Math.abs(d.dif))}</td>`;}});
-    h+=`</tr>`;
-  });
-  // Gran total por rubro
-  const tot={};CONCEPTOS.forEach(c=>tot[c]={mef:0,bce:0});
-  DATA.forEach(r=>{tot[r.concepto].mef+=r.mef;tot[r.concepto].bce+=r.bce;});
-  h+=`<tr class="tot"><td>TOTAL</td><td></td>`;
-  CONCEPTOS.forEach(c=>{const m=tot[c].mef,b=tot[c].bce,d=Math.round((m-b)*100)/100;const z=Math.abs(d)<0.005;
-    h+=`<td class="num sep">${fmt(m)}</td><td class="num">${fmt(b)}</td><td class="d ${z?'ok':''}">${z?'✓':'+'+fmt(Math.abs(d))}</td>`;});
-  h+=`</tr></tbody>`;
-  document.getElementById("mtable").innerHTML=h;
+      if(!d){h+=`<td class="num sep muted">&mdash;</td><td class="num muted">&mdash;</td><td class="d ok">&#10003;</td>`;}
+      else{const z=Math.abs(d.dif)<0.005;h+=`<td class="num sep">${fmt(d.mef)}</td><td class="num">${fmt(d.bce)}</td><td class="d ${z?'ok':''}">${z?'&#10003;':'+'+fmt(Math.abs(d.dif))}</td>`;}});
+    h+=`</tr>`;});
+  const tot={};CONCEPTOS.forEach(c=>tot[c]={mef:0,bce:0});DATA.forEach(r=>{tot[r.concepto].mef+=r.mef;tot[r.concepto].bce+=r.bce;});
+  h+=`<tr class="tot"><td class="acr">TOTAL GENERAL</td><td></td>`;
+  CONCEPTOS.forEach(c=>{const m=tot[c].mef,b=tot[c].bce,d=Math.round((m-b)*100)/100,z=Math.abs(d)<0.005;
+    h+=`<td class="num sep">${fmt(m)}</td><td class="num">${fmt(b)}</td><td class="d ${z?'ok':''}">${z?'&#10003;':'+'+fmt(Math.abs(d))}</td>`;});
+  h+=`</tr></tbody>`;document.getElementById("mtable").innerHTML=h;
   const dif=RES.diferencias;
-  document.getElementById("resSub").textContent=`Periodo ${INFO?INFO.texto:PERIODO} · ${RES.conciliados} de ${RES.total} conceptos conciliados · TOTAL MEF ${fmt(GTOT.mef)} vs BCE ${fmt(GTOT.bce)}`;
+  document.getElementById("stats").innerHTML=
+    `<div class="stat"><div class="n">${RES.total}</div><div class="l">Conceptos comparados</div></div>
+     <div class="stat ok"><div class="n">${RES.conciliados}</div><div class="l">Conciliados</div></div>
+     <div class="stat bad"><div class="n">${dif}</div><div class="l">Con diferencia</div></div>
+     <div class="stat gold"><div class="n">${fmt(GTOT.mef)}</div><div class="l">Total general (USD)</div></div>`;
+  document.getElementById("resSub").textContent=`Periodo ${INFO?INFO.texto:PERIODO} · ${RES.conciliados} de ${RES.total} conceptos conciliados`;
   document.getElementById("resAlert").innerHTML = dif===0
-    ? `<div class="note-ok">✅ Todas las carteras concilian. Puedes generar el Quipux.</div>`
-    : `<div class="note-warn">⚠ ${dif} concepto(s) sin conciliar. Revisa "Ajuste - Observaciones" antes de generar el Quipux.</div>`;
+    ? `<div class="note-ok">&#10004; Conciliacion completa: todas las carteras cuadran al centavo. Puede emitir el oficio de respuesta.</div>`
+    : `<div class="note-warn">&#9888; ${dif} concepto(s) sin conciliar. Gestione las observaciones antes de emitir el oficio.</div>`;
 }
-
-// ---- Ajustes / Observaciones (solo no conciliado) ----
 function pintarAjustes(){
   const cont=document.getElementById("ajContenido");
-  if(RES && RES.conciliado_total){
-    cont.innerHTML=`<div class="note-ok">✅ No existen observaciones. El MEF remitio la informacion completamente conciliada; no se requieren ajustes.</div>`;
-    return;
-  }
+  if(RES&&RES.conciliado_total){cont.innerHTML=`<div class="note-ok">&#10004; No existen observaciones. El MEF remitio la informacion completamente conciliada; no se requieren ajustes.</div>`;return;}
   const cls=t=>t==="Pago Directo"?"pd":t==="Diferencial Cambiario"?"dc":"ot";
-  let h=`<div class="card">
-    <h3 class="sec" style="font-size:15px">&#128228; Cargar respaldo de pago directo (MEF)</h3>
-    <p class="sub" style="margin:6px 0 12px">Sube el respaldo que el MEF envia por Quipux (ej. pagos_directos_ibrd_9722.xls). Se agrega al reporte BCE y podras descargarlo.</p>
-    <div class="drop" id="dzPd" ondrop="onDropPd(event)" ondragover="onOver(event)" ondragleave="onLeave(event)">
-      <div class="ic">&#128196;</div><div class="ti">Respaldo(s) de pago directo</div><div class="dz">&#128229; Arrastra aqui o haz clic</div>
-      <div class="btn-sel"><button class="lnk" onclick="document.getElementById('filePd').click()">&#128193; Seleccionar archivo(s)</button></div>
+  let h=`<div class="card"><h3 class="sec" style="font-size:15px"><span class="bar"></span>Respaldo de pago directo (MEF)</h3>
+    <p class="sub" style="margin:8px 0 14px">Cargue el respaldo que el MEF remite por Quipux. El valor se agrega en el mismo archivo del BCE y podra descargarlo modificado.</p>
+    <div class="drop" id="dzPd" onclick="document.getElementById('filePd').click()" ondrop="onDropPd(event)" ondragover="onOver(event)" ondragleave="onLeave(event)">
+      <div class="ic">&#128196;</div><div class="ti">Respaldo(s) de pago directo</div><div class="de">Arrastre aqui o haga clic</div>
       <input type="file" id="filePd" accept=".xls,.xlsx" multiple onchange="subirPd(this.files)"></div>
-    <div id="pdPrev"></div>
-    <div id="bceDl" style="margin-top:12px"></div>
-  </div>`;
-  h+=`<div class="diaghead">Diagnostico de carteras NO conciliadas<small>${DIAG.length} cartera(s) con diferencia &middot; explicacion segun Observaciones del MEF</small></div>`;
-  if(!DIAG.length){ h+=`<div class="note-ok">No hay carteras con diferencia.</div>`; }
-  else h+=DIAG.map(d=>{const c=cls(d.tipo);
-    const montos=Object.entries(d.rubros||{}).map(([k,v])=>`&Delta; ${k}: ${fmt(v)}`).join(" &middot; ");
-    const obs=d.observacion?`<div class="dobs">&#128221; <b>Observacion MEF:</b> ${d.observacion}</div>`:`<div class="dobs muted">Sin observacion del MEF para esta cartera.</div>`;
-    return `<div class="dcard ${c}"><div class="dh"><span class="dname">${CARTERA_TXT[d.acreedor]||d.acreedor}</span>
-      <span class="dtag ${c}">${d.tipo}</span><span class="dmonto">${montos}</span></div>${obs}
-      <div class="dgrid"><div class="dbox why"><div class="bt">&#191;Por que no concilia?</div><div class="bd">${d.por_que}</div></div>
-      <div class="dbox act"><div class="bt">&#9989; Accion</div><div class="bd">${d.accion}</div></div></div></div>`;
-  }).join("");
-  cont.innerHTML=h;
-  if(RES && RES.bce_ajustado) mostrarDescargaBce();
+    <div id="pdPrev"></div><div id="bceDl" style="margin-top:12px"></div></div>`;
+  h+=`<div class="diaghead">Carteras no conciliadas<small>${DIAG.length} cartera(s) con diferencia &middot; explicacion segun Observaciones del MEF</small></div>`;
+  h+= DIAG.length ? DIAG.map(d=>{const c=cls(d.tipo);
+    const m=Object.entries(d.rubros||{}).map(([k,v])=>`&Delta; ${k}: ${fmt(v)}`).join(" &middot; ");
+    const obs=d.observacion?`<div class="dobs">&#128221; <b>Observacion MEF:</b> ${d.observacion}</div>`:`<div class="dobs muted">Sin observacion del MEF.</div>`;
+    return `<div class="dcard ${c}"><div class="dh"><span class="dname">${CARTERA_TXT[d.acreedor]||d.acreedor}</span><span class="dtag ${c}">${d.tipo}</span><span class="dmonto">${m}</span></div>${obs}
+      <div class="dgrid"><div class="dbox why"><div class="bt">Por que no concilia</div><div class="bd">${d.por_que}</div></div>
+      <div class="dbox act"><div class="bt">Accion</div><div class="bd">${d.accion}</div></div></div></div>`;}).join("") : `<div class="note-ok">No hay carteras con diferencia.</div>`;
+  cont.innerHTML=h;if(RES&&RES.bce_ajustado)mostrarDescargaBce();
 }
 function onDropPd(e){e.preventDefault();e.currentTarget.classList.remove("over");if(e.dataTransfer.files.length)subirPd(e.dataTransfer.files);}
 async function subirPd(files){
-  if(!PERIODO){alert("Primero ejecuta la conciliacion.");return;}
+  if(!PERIODO){alert("Ejecute primero la conciliacion.");return;}
   const fd=new FormData();[...files].forEach(f=>fd.append("archivos",f));
   const prev=document.getElementById("pdPrev");prev.innerHTML="<p class='muted'>Leyendo respaldo...</p>";
   const j=await (await fetch("/api/pago_directo",{method:"POST",body:fd})).json();
-  if(!j.ok){prev.innerHTML="<p style='color:#dc2626'>Error</p>";return;}
-  prev.innerHTML=j.previos.map((p,i)=>{
-    if(p.error)return `<div class="dcard"><b>${p.archivo}</b>: <span style="color:#dc2626">${p.error}</span></div>`;
+  if(!j.ok){prev.innerHTML="<p style='color:#f87171'>Error</p>";return;}
+  prev.innerHTML=j.previos.map((p,i)=>{if(p.error)return `<div class="dcard"><b>${p.archivo}</b>: <span style="color:#f87171">${p.error}</span></div>`;
     const det=(p.detalle||[]).map(d=>`<div class="muted" style="font-size:11.5px">&middot; ${d.beneficiario}: ${fmt(d.monto)}</div>`).join("");
-    return `<div class="dcard pd" id="pd${i}"><div class="dh"><span class="dname">${p.acreedor||'?'}</span><span class="dtag pd">Pago Directo</span><span class="dmonto" style="color:var(--navy)">${p.prestamo||''}</span></div>${det}
+    return `<div class="dcard pd" id="pd${i}"><div class="dh"><span class="dname">${p.acreedor||'?'}</span><span class="dtag pd">Pago Directo</span><span class="dmonto" style="color:var(--gold2)">${p.prestamo||''}</span></div>${det}
       <div class="frow" style="margin-top:10px">
         <div class="fld"><label>Cartera</label><input type="text" id="pdac${i}" value="${p.acreedor||''}" style="width:120px"></div>
         <div class="fld"><label>Referencia</label><input type="text" id="pdref${i}" value="${p.referencia||''}" style="width:110px"></div>
         <div class="fld"><label>Valor USD</label><input type="number" id="pdval${i}" value="${p.valor||0}" step="0.01" style="width:150px"></div>
-        <div class="fld" style="flex:1;min-width:240px"><label>Nota</label><input type="text" id="pdnota${i}" value="${(p.nota||'').replace(/"/g,'&quot;')}" style="width:100%"></div>
-        <button class="btn" onclick="aplicarPd(${i})">&#10133; Agregar al BCE</button></div></div>`;
-  }).join("");
+        <div class="fld" style="flex:1;min-width:230px"><label>Nota</label><input type="text" id="pdnota${i}" value="${(p.nota||'').replace(/"/g,'&quot;')}" style="width:100%"></div>
+        <button class="btn" onclick="aplicarPd(${i})">Agregar al BCE</button></div></div>`;}).join("");
 }
 async function aplicarPd(i){
-  const acreedor=document.getElementById("pdac"+i).value.trim();
-  const valor=parseFloat(document.getElementById("pdval"+i).value)||0;
-  const nota=document.getElementById("pdnota"+i).value.trim();
-  const referencia=document.getElementById("pdref"+i).value.trim();
+  const acreedor=document.getElementById("pdac"+i).value.trim(),valor=parseFloat(document.getElementById("pdval"+i).value)||0;
+  const nota=document.getElementById("pdnota"+i).value.trim(),referencia=document.getElementById("pdref"+i).value.trim();
   if(!acreedor||!valor){alert("Falta cartera o valor");return;}
   const j=await (await fetch("/api/aplicar_pago_directo",{method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({periodo:PERIODO,acreedor,concepto:"Desembolsos",valor,nota,referencia})})).json();
   if(!j.ok){alert(j.error||"Error");return;}
-  aplicarResultado({...j,info_periodo:INFO});
-  document.getElementById("pd"+i).style.opacity=".5";
-  mostrarDescargaBce();
-  alert("Pago directo agregado a "+acreedor+" y reflejado en el reporte BCE.");
+  aplicarResultado({...j,info_periodo:INFO});mostrarDescargaBce();
+  alert("Pago directo agregado a "+acreedor+" en el mismo archivo del BCE.");
 }
-function mostrarDescargaBce(){
-  const el=document.getElementById("bceDl");if(!el)return;
-  el.innerHTML=`<button class="btn alt" onclick="window.location='/api/descargar_bce_ajustado?periodo=${encodeURIComponent(PERIODO)}'">&#11015; Descargar Reporte BCE ajustado (.xlsx)</button>`;
-}
-
-// ---- Quipux (solo si todo concilia) ----
+function mostrarDescargaBce(){const el=document.getElementById("bceDl");if(!el)return;
+  el.innerHTML=`<button class="btn alt" onclick="window.location='/api/descargar_bce_ajustado?periodo=${encodeURIComponent(PERIODO)}'">&#11015; Descargar reporte BCE modificado</button>`;}
 function pintarQuipux(){
   const cont=document.getElementById("quipuxContenido");
-  if(!(RES&&RES.conciliado_total)){
-    const pend=DIAG.map(d=>CARTERA_TXT[d.acreedor]||d.acreedor).join(", ")||(RES?RES.diferencias+" concepto(s)":"");
-    cont.innerHTML=`<div class="note-warn"><b>No se puede generar el Quipux todavia.</b><br>La conciliacion no esta completa. Concilia primero las carteras pendientes${pend?": "+pend:""} en la pestaña "Ajuste - Observaciones".</div>`;
-    return;
-  }
+  if(!(RES&&RES.conciliado_total)){const pend=DIAG.map(d=>CARTERA_TXT[d.acreedor]||d.acreedor).join(", ")||(RES?RES.diferencias+" concepto(s)":"");
+    cont.innerHTML=`<div class="note-warn"><b>El oficio aun no puede emitirse.</b><br>La conciliacion no esta completa. Concilie primero las carteras pendientes${pend?": "+pend:""} en "Gestion de Observaciones".</div>`;return;}
   cont.innerHTML=`<div class="card">
-    <div class="frow">
-      <div class="fld"><label>Nro. Oficio BCE</label><input type="text" id="qOfBce" value="BCE-SSFI-${INFO?INFO.anio:''}-XXXX-OF" style="width:200px"></div>
-      <div class="fld"><label>Responde al Oficio MEF</label><input type="text" id="qOfMef" value="MEF-DNS-${INFO?INFO.anio:''}-XXXX-O" style="width:200px"></div>
-      <div class="fld"><label>Fecha Oficio MEF</label><input type="text" id="qFechaMef" value="" style="width:170px"></div>
-    </div>
-    <div class="frow" style="margin-top:12px">
-      <div class="fld" style="flex:1;min-width:240px"><label>Destinatario</label><input type="text" id="qDest" value="Ana Maria Vallejo Cabezas - Directora Nacional de Seguimiento" style="width:100%"></div>
-      <div class="fld" style="flex:1;min-width:240px"><label>Firmante (BCE)</label><input type="text" id="qFirma" value="Mgs. Luis Santiago Vargas Bautista - Subgerente de Servicios Financieros Internacionales" style="width:100%"></div>
-    </div>
-    <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap">
-      <button class="btn" onclick="generarQuipux()">&#9881;&#65039; Generar texto</button>
-      <button class="btn alt" onclick="copiarQuipux()">&#128203; Copiar</button>
-      <button class="btn alt" onclick="descargarQuipux()">&#11015; Descargar .txt</button>
-    </div>
-    <textarea id="qText" style="margin-top:14px" placeholder="Pulsa 'Generar texto'."></textarea></div>`;
+    <div class="frow"><div class="fld"><label>Nro. Oficio BCE</label><input type="text" id="qOfBce" value="BCE-SSFI-${INFO?INFO.anio:''}-XXXX-OF" style="width:200px"></div>
+      <div class="fld"><label>Responde Oficio MEF</label><input type="text" id="qOfMef" value="MEF-DNS-${INFO?INFO.anio:''}-XXXX-O" style="width:200px"></div>
+      <div class="fld"><label>Fecha Oficio MEF</label><input type="text" id="qFechaMef" value="" style="width:170px"></div></div>
+    <div class="frow" style="margin-top:12px"><div class="fld" style="flex:1;min-width:240px"><label>Destinatario</label><input type="text" id="qDest" value="Ana Maria Vallejo Cabezas - Directora Nacional de Seguimiento" style="width:100%"></div>
+      <div class="fld" style="flex:1;min-width:240px"><label>Firmante (BCE)</label><input type="text" id="qFirma" value="Mgs. Luis Santiago Vargas Bautista - Subgerente de Servicios Financieros Internacionales" style="width:100%"></div></div>
+    <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap"><button class="btn" onclick="generarQuipux()">Generar oficio</button>
+      <button class="btn gh" onclick="copiarQuipux()">Copiar</button><button class="btn gh" onclick="descargarQuipux()">Descargar .txt</button></div>
+    <textarea id="qText" style="margin-top:14px" placeholder="Pulse 'Generar oficio'."></textarea></div>`;
 }
 function unirRubros(a){if(!a.length)return"";if(a.length===1)return a[0];const u=a[a.length-1];const c=/^h?i/i.test(u)?"e":"y";return a.slice(0,-1).join(", ")+" "+c+" "+u;}
 function lineaCartera(cart){const rows=DATA.filter(r=>r.acreedor===cart);const nom=CARTERA_TXT[cart]||cart;
   if(!rows.length)return `${nom}: No existen movimientos.`;
   const con=rows.filter(r=>r.estado==="CONCILIADO").map(r=>RUBRO_TXT[r.concepto]||r.concepto.toLowerCase());
   return `${nom}: No existen observaciones en los rubros de ${unirRubros(con)}.`;}
-function generarQuipux(){
-  if(!(RES&&RES.conciliado_total)){alert("La conciliacion no esta completa.");return;}
-  const ofBce=qv("qOfBce"),ofMef=qv("qOfMef"),fMef=qv("qFechaMef"),dest=qv("qDest"),firma=qv("qFirma");
-  const present=new Set(DATA.map(r=>r.acreedor));
-  const orden=ORDEN_QUIPUX.concat([...present].filter(a=>!ORDEN_QUIPUX.includes(a)));
+function qv(id){const el=document.getElementById(id);return el?el.value.trim():"";}
+function generarQuipux(){if(!(RES&&RES.conciliado_total)){alert("La conciliacion no esta completa.");return;}
+  const present=new Set(DATA.map(r=>r.acreedor));const orden=ORDEN_QUIPUX.concat([...present].filter(a=>!ORDEN_QUIPUX.includes(a)));
   const lineas=orden.filter(c=>present.has(c)||["AIIB","GPS"].includes(c)).map(lineaCartera);
-  const hoy=new Date().toLocaleDateString("es-EC",{day:"numeric",month:"long",year:"numeric"});
-  const txt=`Oficio Nro. ${ofBce}
+  const hoy=new Date().toLocaleDateString("es-EC",{day:"numeric",month:"long",year:"numeric"});const fMef=qv("qFechaMef");
+  const txt=`Oficio Nro. ${qv("qOfBce")}
 Quito, D.M., ${hoy}
 
 Asunto: Conciliacion mensual de valores del Servicio de la Deuda a ${INFO?INFO.texto:PERIODO}
 
 Senora Magister
-${dest}
+${qv("qDest")}
 MINISTERIO DE ECONOMIA Y FINANZAS
 En su Despacho
 
 De mi consideracion:
 
-Me refiero al Oficio Nro. ${ofMef}${fMef?` de ${fMef}`:""}, mediante el cual su Despacho solicito la ratificacion o rectificacion de la informacion sobre los movimientos de la deuda externa publica correspondiente al mes de ${(INFO?INFO.mes:"").toLowerCase()} de ${INFO?INFO.anio:""}.
+Me refiero al Oficio Nro. ${qv("qOfMef")}${fMef?` de ${fMef}`:""}, mediante el cual su Despacho solicito la ratificacion o rectificacion de la informacion sobre los movimientos de la deuda externa publica correspondiente al mes de ${(INFO?INFO.mes:"").toLowerCase()} de ${INFO?INFO.anio:""}.
 
 Al respecto, me permito indicar lo siguiente:
 
@@ -709,22 +685,15 @@ Con sentimientos de distinguida consideracion.
 Atentamente,
 
 Documento firmado electronicamente
-${firma}`;
-  document.getElementById("qText").value=txt;
-}
-function qv(id){const el=document.getElementById(id);return el?el.value.trim():"";}
-function copiarQuipux(){const t=document.getElementById("qText");if(!t.value){alert("Genera el texto primero.");return;}t.select();document.execCommand("copy");alert("Texto copiado.");}
-function descargarQuipux(){const t=document.getElementById("qText").value;if(!t){alert("Genera el texto primero.");return;}
-  const b=new Blob([t],{type:"text/plain;charset=utf-8"}),u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download="Quipux_Respuesta_"+PERIODO+".txt";a.click();URL.revokeObjectURL(u);}
-
-function irA(v){
-  if(v==="quipux" && !(RES&&RES.conciliado_total)){ /* permitido: muestra el bloqueo */ }
-  document.querySelectorAll(".nav .it").forEach(it=>it.classList.toggle("act",it.dataset.v===v));
-  ["cargar","resultados","ajustes","quipux"].forEach(s=>document.getElementById("v-"+s).classList.toggle("hidden",s!==v));
-}
+${qv("qFirma")}`;
+  document.getElementById("qText").value=txt;}
+function copiarQuipux(){const t=document.getElementById("qText");if(!t.value){alert("Genere el oficio primero.");return;}t.select();document.execCommand("copy");alert("Texto copiado.");}
+function descargarQuipux(){const t=document.getElementById("qText").value;if(!t){alert("Genere el oficio primero.");return;}
+  const b=new Blob([t],{type:"text/plain;charset=utf-8"}),u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download="Oficio_Respuesta_"+PERIODO+".txt";a.click();URL.revokeObjectURL(u);}
+function irA(v){document.querySelectorAll(".nav .it").forEach(it=>it.classList.toggle("act",it.dataset.v===v));
+  ["cargar","resultados","ajustes","quipux"].forEach(s=>document.getElementById("v-"+s).classList.toggle("hidden",s!==v));}
 document.getElementById("nav").addEventListener("click",e=>{const it=e.target.closest(".it");if(it&&!it.classList.contains("dis"))irA(it.dataset.v);});
-</script>
-</body></html>"""
+</script></body></html>"""
 
 
 @app.route("/")
