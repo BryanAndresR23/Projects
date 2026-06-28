@@ -568,9 +568,26 @@ PANEL_HTML = r"""<!doctype html>
       </section>
 
       <section id="v-cert" class="hidden">
-        <h3 class="sec">&#128220; Certificacion</h3>
-        <p class="sub">Reporte oficial imprimible del periodo conciliado.</p>
-        <div class="card" id="certBody"><span class="muted">Ejecuta una conciliacion para generar la certificacion.</span></div>
+        <h3 class="sec">&#128220; Certificacion / Quipux de respuesta</h3>
+        <p class="sub">Genera el texto del oficio de respuesta BCE &rarr; MEF segun el resultado de la conciliacion.</p>
+        <div class="card">
+          <div class="frow">
+            <div class="fld"><label>Nro. Oficio BCE</label><input type="text" id="qOfBce" value="BCE-SSFI-2026-XXXX-OF" style="width:200px"></div>
+            <div class="fld"><label>Responde al Oficio MEF</label><input type="text" id="qOfMef" value="MEF-DNS-2026-0011-O" style="width:200px"></div>
+            <div class="fld"><label>Fecha Oficio MEF</label><input type="text" id="qFechaMef" value="14 de mayo de 2026" style="width:180px"></div>
+          </div>
+          <div class="frow" style="margin-top:12px">
+            <div class="fld" style="flex:1;min-width:260px"><label>Destinatario</label><input type="text" id="qDest" value="Ana Maria Vallejo Cabezas - Directora Nacional de Seguimiento" style="width:100%"></div>
+            <div class="fld" style="flex:1;min-width:260px"><label>Firmante (BCE)</label><input type="text" id="qFirma" value="Mgs. Luis Santiago Vargas Bautista - Subgerente de Servicios Financieros Internacionales" style="width:100%"></div>
+          </div>
+          <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap">
+            <button class="btn" onclick="generarQuipux()">&#9881;&#65039; Generar texto</button>
+            <button class="btn alt" onclick="copiarQuipux()">&#128203; Copiar</button>
+            <button class="btn alt" onclick="descargarQuipux()">&#11015; Descargar .txt</button>
+            <button class="btn alt" onclick="window.print()">&#128424;&#65039; Imprimir</button>
+          </div>
+          <textarea id="qText" style="width:100%;height:460px;margin-top:14px;border:1px solid var(--line);border-radius:10px;padding:14px;font-family:Consolas,monospace;font-size:12.5px;color:var(--txt);background:#fcfdff" placeholder="Ejecuta una conciliacion y pulsa 'Generar texto'."></textarea>
+        </div>
       </section>
 
       <section id="v-historial" class="hidden">
@@ -746,26 +763,86 @@ async function exportar(){
   a.href=u;a.download="Conciliacion_BCE_MEF_"+PERIODO+".xlsx";a.click();URL.revokeObjectURL(u);
 }
 
-function pintarCert(){
-  if(!RESUMEN)return;
-  const {total,con,dif,mes,anio,analista}=RESUMEN;
-  const fdif=DATA.filter(r=>r.estado==="DIFERENCIA");
-  const tdif=fdif.length
-    ? `<table style="margin-top:10px"><thead><tr><th>Acreedor</th><th>Concepto</th><th style="text-align:right">Diferencia</th></tr></thead><tbody>${fdif.map(r=>`<tr><td>${r.acreedor}</td><td>${r.concepto}</td><td class="num">${fmt(r.diferencia)}</td></tr>`).join("")}</tbody></table>`
-    : `<p style="color:#166534;font-weight:700">Sin diferencias: la conciliacion cuadra al 100%.</p>`;
-  document.getElementById("certBody").innerHTML=`
-    <div style="text-align:center;margin-bottom:10px">
-      <div style="font-size:26px">&#127466;&#127464;</div>
-      <h2 style="margin:6px 0;color:var(--navy)">CERTIFICACION DE CONCILIACION</h2>
-      <div class="muted">Deuda Externa Publica &middot; Ministerio de Economia y Finanzas del Ecuador</div>
-    </div>
-    <p>Se certifica que la conciliacion de pagos de deuda externa publica del periodo
-    <b>${mes} ${anio}</b>, entre los reportes del <b>BCE</b> y del <b>MEF</b>, arrojo
-    <b>${con}</b> conceptos conciliados de <b>${total}</b> comparados${dif?`, con <b>${dif}</b> diferencia(s) a revisar`:` (cuadre total)`}.</p>
-    ${tdif}
-    <p style="margin-top:18px">Analista responsable: <b>${analista}</b><br>Fecha de emision: <b>${new Date().toLocaleString("es-EC")}</b></p>
-    <button class="btn alt" onclick="window.print()" style="margin-top:10px">&#128424;&#65039; Imprimir / Guardar PDF</button>`;
+// ---- Generador del Quipux de respuesta BCE -> MEF ----
+const RUBRO_TXT={"Desembolsos":"desembolsos","Amortizaciones":"amortizaciones","Intereses":"intereses",
+  "Comisiones":"comisiones","Intereses Condonados":"condonados","Interés por Mora":"intereses por mora"};
+const CARTERA_TXT={"AMAZON DAC":"AMAZON"};
+const ORDEN_QUIPUX=["AIIB","AMAZON DAC","BANCOS","BID","BIRF","BONOS","CAF","FIDA","FLAR","FMI","GOBIERNOS","GPS"];
+
+function unirRubros(arr){
+  if(!arr.length) return "";
+  if(arr.length===1) return arr[0];
+  const ult=arr[arr.length-1];
+  const conj=/^h?i/i.test(ult)?"e":"y";   // "comisiones e intereses", "intereses y comisiones"
+  return arr.slice(0,-1).join(", ")+" "+conj+" "+ult;
 }
+
+function lineaCartera(cart){
+  const rows=DATA.filter(r=>r.acreedor===cart);
+  const nombre=CARTERA_TXT[cart]||cart;
+  if(!rows.length) return `${nombre}: No existen movimientos.`;
+  const con=rows.filter(r=>r.estado==="CONCILIADO").map(r=>RUBRO_TXT[r.concepto]||r.concepto.toLowerCase());
+  const dif=rows.filter(r=>r.estado==="DIFERENCIA");
+  let s="";
+  if(con.length) s=`${nombre}: No existen observaciones en los rubros de ${unirRubros(con)}.`;
+  else s=`${nombre}:`;
+  if(dif.length){
+    const d=dif.map(r=>`${RUBRO_TXT[r.concepto]||r.concepto.toLowerCase()} (diferencia USD ${fmt(Math.abs(r.diferencia))})`);
+    s+=` Existe(n) diferencia(s) por revisar en: ${unirRubros(d)}.`;
+  }
+  return s;
+}
+
+function generarQuipux(){
+  if(!DATA.length){alert("Primero ejecuta una conciliacion.");return;}
+  const {mes,anio,dif}=RESUMEN;
+  const ofBce=document.getElementById("qOfBce").value.trim();
+  const ofMef=document.getElementById("qOfMef").value.trim();
+  const fMef=document.getElementById("qFechaMef").value.trim();
+  const dest=document.getElementById("qDest").value.trim();
+  const firma=document.getElementById("qFirma").value.trim();
+  const presentes=new Set(DATA.map(r=>r.acreedor));
+  const orden=ORDEN_QUIPUX.concat([...presentes].filter(a=>!ORDEN_QUIPUX.includes(a)));
+  const lineas=orden.filter(c=>presentes.has(c)||["AIIB","GPS"].includes(c)).map(lineaCartera);
+  const cierre=dif
+    ? "Una vez subsanadas las diferencias señaladas, se procedera a ratificar la informacion. Adjunto la matriz de conciliacion del Banco Central del Ecuador en formato Excel."
+    : "Por lo expuesto, me permito remitir para su revision la matriz de conciliacion del Banco Central del Ecuador en formato Excel. Este archivo contiene la informacion completa y necesaria para el proceso de conciliacion.";
+  const txt=
+`Oficio Nro. ${ofBce}
+Quito, D.M., ${new Date().toLocaleDateString("es-EC",{day:"numeric",month:"long",year:"numeric"})}
+
+Asunto: Conciliacion mensual de valores del Servicio de la Deuda a ${mes} ${anio}
+
+Senora Magister
+${dest}
+MINISTERIO DE ECONOMIA Y FINANZAS
+En su Despacho
+
+De mi consideracion:
+
+Me refiero al Oficio Nro. ${ofMef} de ${fMef}, mediante el cual su Despacho solicito la ratificacion o rectificacion de la informacion sobre los movimientos de la deuda externa publica correspondiente al mes de ${(mes||"").toLowerCase()} de ${anio}.
+
+Al respecto, me permito indicar lo siguiente:
+
+${lineas.join("\n")}
+
+${cierre}
+
+Con sentimientos de distinguida consideracion.
+
+Atentamente,
+
+Documento firmado electronicamente
+${firma}`;
+  document.getElementById("qText").value=txt;
+}
+function pintarCert(){ if(RESUMEN && DATA.length) generarQuipux(); }
+function copiarQuipux(){ const t=document.getElementById("qText"); t.select(); document.execCommand("copy");
+  msg("Texto del Quipux copiado al portapapeles."); }
+function descargarQuipux(){ const t=document.getElementById("qText").value;
+  if(!t){alert("Genera el texto primero.");return;}
+  const b=new Blob([t],{type:"text/plain;charset=utf-8"}),u=URL.createObjectURL(b),a=document.createElement("a");
+  a.href=u;a.download="Quipux_Respuesta_"+(PERIODO||"conciliacion")+".txt";a.click();URL.revokeObjectURL(u); }
 
 async function cargarHistorial(){
   const j=await (await fetch("/api/historial")).json();
