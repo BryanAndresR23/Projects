@@ -92,6 +92,9 @@ PERIODO_FILES = {}
 
 @app.errorhandler(Exception)
 def handle_exception(e):
+    from werkzeug.exceptions import HTTPException
+    if isinstance(e, HTTPException):
+        return e  # 404/405/etc. pasan tal cual (p. ej. /logo sin archivo)
     import traceback
     tb = traceback.format_exc()
     print("=" * 60); print("ERROR NO MANEJADO:"); print(tb); print("=" * 60)
@@ -468,11 +471,16 @@ PANEL_HTML = r"""<!doctype html>
   .wordmark{font-family:"Archivo",sans-serif;font-weight:800;letter-spacing:.5px;line-height:1}
   .wordmark .b1{color:#fff;font-size:14px}.wordmark .b2{color:var(--gold2);font-size:11px;letter-spacing:2px}
   .topbrand{display:flex;align-items:center;gap:12px}.topbrand .bce-sun{width:34px;height:34px;margin:0}
+  .bce-logo{max-width:170px;max-height:84px;display:block;margin:0 auto;filter:drop-shadow(0 3px 8px #0007)}
+  .topbrand .bce-logo{max-height:36px;margin:0}
+  .flagbar{display:flex;height:6px;width:96px;border-radius:3px;overflow:hidden;margin:9px auto 0;box-shadow:0 1px 4px #0006}
+  .flagbar i{flex:1}.flagbar .y{background:#ffd200}.flagbar .b{background:#0033a0}.flagbar .r{background:#ed1c24}
+  .logo-slot{position:relative}
   .muted{color:var(--muted)}
 </style></head>
 <body>
   <aside class="side">
-    <div class="brand"><svg class="bce-sun" viewBox="0 0 140 140" xmlns="http://www.w3.org/2000/svg" aria-label="Banco Central del Ecuador"><g fill="#E6B422"><polygon points="130.0,70.0 91.8,67.1 91.8,72.9"/><polygon points="116.2,89.1 91.1,76.3 89.4,80.4"/><polygon points="112.4,112.4 87.4,83.4 83.4,87.4"/><polygon points="89.1,116.2 80.4,89.4 76.3,91.1"/><polygon points="70.0,130.0 72.9,91.8 67.1,91.8"/><polygon points="50.9,116.2 63.7,91.1 59.6,89.4"/><polygon points="27.6,112.4 56.6,87.4 52.6,83.4"/><polygon points="23.8,89.1 50.6,80.4 48.9,76.3"/><polygon points="10.0,70.0 48.2,72.9 48.2,67.1"/><polygon points="23.8,50.9 48.9,63.7 50.6,59.6"/><polygon points="27.6,27.6 52.6,56.6 56.6,52.6"/><polygon points="50.9,23.8 59.6,50.6 63.7,48.9"/><polygon points="70.0,10.0 67.1,48.2 72.9,48.2"/><polygon points="89.1,23.8 76.3,48.9 80.4,50.6"/><polygon points="112.4,27.6 83.4,52.6 87.4,56.6"/><polygon points="116.2,50.9 89.4,59.6 91.1,63.7"/><circle cx="70" cy="70" r="22"/></g><g fill="#1a2440"><circle cx="62" cy="66" r="3.4"/><circle cx="78" cy="66" r="3.4"/><path d="M58 76 Q70 86 82 76" stroke="#1a2440" stroke-width="3.2" fill="none" stroke-linecap="round"/><path d="M64 58 Q70 54 76 58" stroke="#1a2440" stroke-width="2.6" fill="none" stroke-linecap="round"/></g></svg><div class="wordmark" style="margin-top:10px"><div class="b1">BANCO CENTRAL</div><div class="b2">DEL ECUADOR</div></div><div class="ln"></div><h2 style="font-size:12px;letter-spacing:1px;color:var(--gold2)">CONCILIACION DE DEUDA EXTERNA</h2><small>Servicios Financieros Internacionales</small></div>
+    <div class="brand"><span class="logo-slot"><img class="bce-logo" src="/logo" alt="Banco Central del Ecuador" onerror="this.style.display='none'" onload="var sib=this.nextElementSibling; if(sib) sib.style.display='none';"><svg class="bce-sun" viewBox="0 0 140 140" xmlns="http://www.w3.org/2000/svg" aria-label="Banco Central del Ecuador"><g fill="#E6B422"><polygon points="130.0,70.0 91.8,67.1 91.8,72.9"/><polygon points="116.2,89.1 91.1,76.3 89.4,80.4"/><polygon points="112.4,112.4 87.4,83.4 83.4,87.4"/><polygon points="89.1,116.2 80.4,89.4 76.3,91.1"/><polygon points="70.0,130.0 72.9,91.8 67.1,91.8"/><polygon points="50.9,116.2 63.7,91.1 59.6,89.4"/><polygon points="27.6,112.4 56.6,87.4 52.6,83.4"/><polygon points="23.8,89.1 50.6,80.4 48.9,76.3"/><polygon points="10.0,70.0 48.2,72.9 48.2,67.1"/><polygon points="23.8,50.9 48.9,63.7 50.6,59.6"/><polygon points="27.6,27.6 52.6,56.6 56.6,52.6"/><polygon points="50.9,23.8 59.6,50.6 63.7,48.9"/><polygon points="70.0,10.0 67.1,48.2 72.9,48.2"/><polygon points="89.1,23.8 76.3,48.9 80.4,50.6"/><polygon points="112.4,27.6 83.4,52.6 87.4,56.6"/><polygon points="116.2,50.9 89.4,59.6 91.1,63.7"/><circle cx="70" cy="70" r="22"/></g><g fill="#1a2440"><circle cx="62" cy="66" r="3.4"/><circle cx="78" cy="66" r="3.4"/><path d="M58 76 Q70 86 82 76" stroke="#1a2440" stroke-width="3.2" fill="none" stroke-linecap="round"/><path d="M64 58 Q70 54 76 58" stroke="#1a2440" stroke-width="2.6" fill="none" stroke-linecap="round"/></g></svg></span><div class="flagbar"><i class="y"></i><i class="b"></i><i class="r"></i></div><div class="wordmark" style="margin-top:10px"><div class="b1">BANCO CENTRAL</div><div class="b2">DEL ECUADOR</div></div><div class="ln"></div><h2 style="font-size:12px;letter-spacing:1px;color:var(--gold2)">CONCILIACION DE DEUDA EXTERNA</h2><small>Servicios Financieros Internacionales</small></div>
     <nav class="nav" id="nav">
       <div class="it act" data-v="cargar"><div class="num">I</div><div><div class="tt">Recepcion de Reportes</div><div class="ss">MEF &middot; BCE</div></div></div>
       <div class="it" data-v="resultados"><div class="num">II</div><div><div class="tt">Conciliacion de Carteras</div><div class="ss">Cruce y resultados</div></div></div>
@@ -483,7 +491,7 @@ PANEL_HTML = r"""<!doctype html>
     <div class="estado"><div class="h">Estado de carteras</div><div id="estadoSide" style="color:var(--muted)">Sin datos</div></div>
   </aside>
   <div class="main">
-    <div class="top"><div class="topbrand"><svg class="bce-sun" viewBox="0 0 140 140" xmlns="http://www.w3.org/2000/svg" aria-label="Banco Central del Ecuador"><g fill="#E6B422"><polygon points="130.0,70.0 91.8,67.1 91.8,72.9"/><polygon points="116.2,89.1 91.1,76.3 89.4,80.4"/><polygon points="112.4,112.4 87.4,83.4 83.4,87.4"/><polygon points="89.1,116.2 80.4,89.4 76.3,91.1"/><polygon points="70.0,130.0 72.9,91.8 67.1,91.8"/><polygon points="50.9,116.2 63.7,91.1 59.6,89.4"/><polygon points="27.6,112.4 56.6,87.4 52.6,83.4"/><polygon points="23.8,89.1 50.6,80.4 48.9,76.3"/><polygon points="10.0,70.0 48.2,72.9 48.2,67.1"/><polygon points="23.8,50.9 48.9,63.7 50.6,59.6"/><polygon points="27.6,27.6 52.6,56.6 56.6,52.6"/><polygon points="50.9,23.8 59.6,50.6 63.7,48.9"/><polygon points="70.0,10.0 67.1,48.2 72.9,48.2"/><polygon points="89.1,23.8 76.3,48.9 80.4,50.6"/><polygon points="112.4,27.6 83.4,52.6 87.4,56.6"/><polygon points="116.2,50.9 89.4,59.6 91.1,63.7"/><circle cx="70" cy="70" r="22"/></g><g fill="#1a2440"><circle cx="62" cy="66" r="3.4"/><circle cx="78" cy="66" r="3.4"/><path d="M58 76 Q70 86 82 76" stroke="#1a2440" stroke-width="3.2" fill="none" stroke-linecap="round"/><path d="M64 58 Q70 54 76 58" stroke="#1a2440" stroke-width="2.6" fill="none" stroke-linecap="round"/></g></svg><h1>Sistema de Conciliacion de <b>Deuda Externa Publica</b></h1></div>
+    <div class="top"><div class="topbrand"><span class="logo-slot"><img class="bce-logo" src="/logo" alt="BCE" onerror="this.style.display='none'" onload="var sib=this.nextElementSibling; if(sib) sib.style.display='none';"><svg class="bce-sun" viewBox="0 0 140 140" xmlns="http://www.w3.org/2000/svg" aria-label="Banco Central del Ecuador"><g fill="#E6B422"><polygon points="130.0,70.0 91.8,67.1 91.8,72.9"/><polygon points="116.2,89.1 91.1,76.3 89.4,80.4"/><polygon points="112.4,112.4 87.4,83.4 83.4,87.4"/><polygon points="89.1,116.2 80.4,89.4 76.3,91.1"/><polygon points="70.0,130.0 72.9,91.8 67.1,91.8"/><polygon points="50.9,116.2 63.7,91.1 59.6,89.4"/><polygon points="27.6,112.4 56.6,87.4 52.6,83.4"/><polygon points="23.8,89.1 50.6,80.4 48.9,76.3"/><polygon points="10.0,70.0 48.2,72.9 48.2,67.1"/><polygon points="23.8,50.9 48.9,63.7 50.6,59.6"/><polygon points="27.6,27.6 52.6,56.6 56.6,52.6"/><polygon points="50.9,23.8 59.6,50.6 63.7,48.9"/><polygon points="70.0,10.0 67.1,48.2 72.9,48.2"/><polygon points="89.1,23.8 76.3,48.9 80.4,50.6"/><polygon points="112.4,27.6 83.4,52.6 87.4,56.6"/><polygon points="116.2,50.9 89.4,59.6 91.1,63.7"/><circle cx="70" cy="70" r="22"/></g><g fill="#1a2440"><circle cx="62" cy="66" r="3.4"/><circle cx="78" cy="66" r="3.4"/><path d="M58 76 Q70 86 82 76" stroke="#1a2440" stroke-width="3.2" fill="none" stroke-linecap="round"/><path d="M64 58 Q70 54 76 58" stroke="#1a2440" stroke-width="2.6" fill="none" stroke-linecap="round"/></g></svg></span><h1>Sistema de Conciliacion de <b>Deuda Externa Publica</b></h1></div>
       <div class="right"><span class="badge" id="periodoBadge">Periodo no detectado</span>
         <span class="uchip"><span class="uav">U</span>Usuario</span></div></div>
     <div class="content">
@@ -700,6 +708,20 @@ function irA(v){document.querySelectorAll(".nav .it").forEach(it=>it.classList.t
   ["cargar","resultados","ajustes","quipux"].forEach(s=>document.getElementById("v-"+s).classList.toggle("hidden",s!==v));}
 document.getElementById("nav").addEventListener("click",e=>{const it=e.target.closest(".it");if(it&&!it.classList.contains("dis"))irA(it.dataset.v);});
 </script></body></html>"""
+
+
+@app.route("/logo")
+def logo():
+    """Sirve el logo OFICIAL del BCE si el usuario deja un archivo
+    'logo_bce.(png|jpg|svg)' en la carpeta de la app; si no, 404 y la
+    interfaz usa el emblema SVG por defecto."""
+    for ext, mime in (("png", "image/png"), ("jpg", "image/jpeg"),
+                      ("jpeg", "image/jpeg"), ("svg", "image/svg+xml")):
+        ruta = os.path.join(BASE_DIR, f"logo_bce.{ext}")
+        if os.path.exists(ruta):
+            return send_file(ruta, mimetype=mime)
+    from flask import abort
+    abort(404)
 
 
 @app.route("/")
