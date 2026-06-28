@@ -366,12 +366,15 @@ def api_descargar_bce_ajustado():
 PANEL_HTML = r"""<!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sistema de Conciliacion de Deuda Externa Publica</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=Libre+Franklin:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root{--bg:#0a0f1f;--bg2:#0e1530;--panel:#121b36cc;--panel2:#0f1730;--line:#24314f;
         --txt:#e9eefb;--muted:#94a3c4;--gold:#d9b572;--gold2:#f0d49a;--cyan:#5ad1e6;
         --ok:#34d399;--okbg:#0e2b22;--bad:#f87171;--badbg:#2c1620;--blue:#3b82f6;}
   *{box-sizing:border-box}html,body{margin:0;height:100%}
-  body{display:flex;min-height:100vh;color:var(--txt);font-family:"Segoe UI",system-ui,sans-serif;font-size:14px;
+  body{display:flex;min-height:100vh;color:var(--txt);font-family:"Libre Franklin","Segoe UI",system-ui,sans-serif;font-size:14px;
        background:radial-gradient(1200px 700px at 0% -10%,#16224a 0%,transparent 55%),
                   radial-gradient(1000px 600px at 100% 0%,#0c2a3a 0%,transparent 50%),
                   linear-gradient(180deg,var(--bg),var(--bg2));}
@@ -460,13 +463,16 @@ PANEL_HTML = r"""<!doctype html>
   .dgrid{display:grid;grid-template-columns:1fr 1fr;gap:11px}@media(max-width:760px){.dgrid{grid-template-columns:1fr}}
   .dbox{background:#0c1428;border:1px solid var(--line);border-radius:9px;padding:10px 12px}.dbox .bt{font-size:10px;font-weight:800;text-transform:uppercase;margin-bottom:4px;letter-spacing:.4px}.dbox.why .bt{color:#f0cd8f}.dbox.act .bt{color:var(--ok)}.dbox .bd{font-size:12px;color:#c7d2ea}
   textarea{width:100%;height:440px;background:#0c1428;border:1px solid var(--line);border-radius:11px;padding:14px;font-family:Consolas,monospace;font-size:12.5px;color:#dbe3f5}
+  h1,h2,h3,.brand h2,.nav .it .tt,.btn,.est-pill,.dtag{font-family:"Archivo","Segoe UI",sans-serif}
+  .bce-sun{width:62px;height:62px;display:block;margin:0 auto;filter:drop-shadow(0 3px 8px #0007)}
+  .wordmark{font-family:"Archivo",sans-serif;font-weight:800;letter-spacing:.5px;line-height:1}
+  .wordmark .b1{color:#fff;font-size:14px}.wordmark .b2{color:var(--gold2);font-size:11px;letter-spacing:2px}
+  .topbrand{display:flex;align-items:center;gap:12px}.topbrand .bce-sun{width:34px;height:34px;margin:0}
   .muted{color:var(--muted)}
 </style></head>
 <body>
   <aside class="side">
-    <div class="brand"><div class="crest">&#127963;&#65039;</div>
-      <h2>CONCILIACION DE DEUDA</h2><div class="ln"></div>
-      <small>Banco Central del Ecuador<br>Servicios Financieros Internacionales</small></div>
+    <div class="brand"><svg class="bce-sun" viewBox="0 0 140 140" xmlns="http://www.w3.org/2000/svg" aria-label="Banco Central del Ecuador"><g fill="#E6B422"><polygon points="130.0,70.0 91.8,67.1 91.8,72.9"/><polygon points="116.2,89.1 91.1,76.3 89.4,80.4"/><polygon points="112.4,112.4 87.4,83.4 83.4,87.4"/><polygon points="89.1,116.2 80.4,89.4 76.3,91.1"/><polygon points="70.0,130.0 72.9,91.8 67.1,91.8"/><polygon points="50.9,116.2 63.7,91.1 59.6,89.4"/><polygon points="27.6,112.4 56.6,87.4 52.6,83.4"/><polygon points="23.8,89.1 50.6,80.4 48.9,76.3"/><polygon points="10.0,70.0 48.2,72.9 48.2,67.1"/><polygon points="23.8,50.9 48.9,63.7 50.6,59.6"/><polygon points="27.6,27.6 52.6,56.6 56.6,52.6"/><polygon points="50.9,23.8 59.6,50.6 63.7,48.9"/><polygon points="70.0,10.0 67.1,48.2 72.9,48.2"/><polygon points="89.1,23.8 76.3,48.9 80.4,50.6"/><polygon points="112.4,27.6 83.4,52.6 87.4,56.6"/><polygon points="116.2,50.9 89.4,59.6 91.1,63.7"/><circle cx="70" cy="70" r="22"/></g><g fill="#1a2440"><circle cx="62" cy="66" r="3.4"/><circle cx="78" cy="66" r="3.4"/><path d="M58 76 Q70 86 82 76" stroke="#1a2440" stroke-width="3.2" fill="none" stroke-linecap="round"/><path d="M64 58 Q70 54 76 58" stroke="#1a2440" stroke-width="2.6" fill="none" stroke-linecap="round"/></g></svg><div class="wordmark" style="margin-top:10px"><div class="b1">BANCO CENTRAL</div><div class="b2">DEL ECUADOR</div></div><div class="ln"></div><h2 style="font-size:12px;letter-spacing:1px;color:var(--gold2)">CONCILIACION DE DEUDA EXTERNA</h2><small>Servicios Financieros Internacionales</small></div>
     <nav class="nav" id="nav">
       <div class="it act" data-v="cargar"><div class="num">I</div><div><div class="tt">Recepcion de Reportes</div><div class="ss">MEF &middot; BCE</div></div></div>
       <div class="it" data-v="resultados"><div class="num">II</div><div><div class="tt">Conciliacion de Carteras</div><div class="ss">Cruce y resultados</div></div></div>
@@ -477,7 +483,7 @@ PANEL_HTML = r"""<!doctype html>
     <div class="estado"><div class="h">Estado de carteras</div><div id="estadoSide" style="color:var(--muted)">Sin datos</div></div>
   </aside>
   <div class="main">
-    <div class="top"><h1>Sistema de Conciliacion de <b>Deuda Externa Publica</b></h1>
+    <div class="top"><div class="topbrand"><svg class="bce-sun" viewBox="0 0 140 140" xmlns="http://www.w3.org/2000/svg" aria-label="Banco Central del Ecuador"><g fill="#E6B422"><polygon points="130.0,70.0 91.8,67.1 91.8,72.9"/><polygon points="116.2,89.1 91.1,76.3 89.4,80.4"/><polygon points="112.4,112.4 87.4,83.4 83.4,87.4"/><polygon points="89.1,116.2 80.4,89.4 76.3,91.1"/><polygon points="70.0,130.0 72.9,91.8 67.1,91.8"/><polygon points="50.9,116.2 63.7,91.1 59.6,89.4"/><polygon points="27.6,112.4 56.6,87.4 52.6,83.4"/><polygon points="23.8,89.1 50.6,80.4 48.9,76.3"/><polygon points="10.0,70.0 48.2,72.9 48.2,67.1"/><polygon points="23.8,50.9 48.9,63.7 50.6,59.6"/><polygon points="27.6,27.6 52.6,56.6 56.6,52.6"/><polygon points="50.9,23.8 59.6,50.6 63.7,48.9"/><polygon points="70.0,10.0 67.1,48.2 72.9,48.2"/><polygon points="89.1,23.8 76.3,48.9 80.4,50.6"/><polygon points="112.4,27.6 83.4,52.6 87.4,56.6"/><polygon points="116.2,50.9 89.4,59.6 91.1,63.7"/><circle cx="70" cy="70" r="22"/></g><g fill="#1a2440"><circle cx="62" cy="66" r="3.4"/><circle cx="78" cy="66" r="3.4"/><path d="M58 76 Q70 86 82 76" stroke="#1a2440" stroke-width="3.2" fill="none" stroke-linecap="round"/><path d="M64 58 Q70 54 76 58" stroke="#1a2440" stroke-width="2.6" fill="none" stroke-linecap="round"/></g></svg><h1>Sistema de Conciliacion de <b>Deuda Externa Publica</b></h1></div>
       <div class="right"><span class="badge" id="periodoBadge">Periodo no detectado</span>
         <span class="uchip"><span class="uav">U</span>Usuario</span></div></div>
     <div class="content">
