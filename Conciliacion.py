@@ -328,6 +328,100 @@ def diagnostico(ruta_mef):
 
 
 # -------------------------------------------------------------------------
+# PAGOS DIRECTOS  —  respaldos que el MEF envía por Quipux
+# -------------------------------------------------------------------------
+# Estos archivos sustentan desembolsos hechos directamente al proveedor que
+# NO pasaron por el Banco Central, por lo que no constan en el reporte BCE.
+# Al conciliar hay que agregarlos al lado del BCE con su nota de pago directo.
+PD_LENDER = {
+    "IBRD": "BIRF", "BIRF": "BIRF", "WORLD BANK": "BIRF",
+    "IDB": "BID", "BID": "BID", "CAF": "CAF", "CFA": "CAF",
+    "KFW": "GOBIERNOS", "EXIMBANK KOREA": "GOBIERNOS", "FIDA": "FIDA",
+    "IFAD": "FIDA", "BEI": "BANCOS", "EIB": "BANCOS",
+}
+
+
+def leer_pago_directo(ruta):
+    """Lee un respaldo de pago directo del MEF y extrae:
+       {acreedor, prestamo, referencia, valor, moneda, nota, detalle[]}.
+    El valor es el TOTAL del archivo (o la suma de los pagos si no hay total)."""
+    libro = xlrd.open_workbook(ruta)
+    hoja = libro.sheet_by_index(0)
+
+    # 1) Préstamo / prestamista: celda contigua a "Loan"
+    prestamo = ""
+    for r in range(min(hoja.nrows, 10)):
+        for c in range(hoja.ncols):
+            if "loan" in str(hoja.cell_value(r, c)).lower():
+                if c + 1 < hoja.ncols:
+                    prestamo = str(hoja.cell_value(r, c + 1)).strip()
+                break
+        if prestamo:
+            break
+    texto = (prestamo + " " + os.path.basename(ruta)).upper()
+
+    acreedor = None
+    for clave, dest in PD_LENDER.items():
+        if clave in texto:
+            acreedor = dest
+            break
+
+    # Referencia (código de crédito): primer número del préstamo o del nombre
+    m = re.search(r"(\d{3,8})", prestamo) or re.search(r"(\d{3,8})", os.path.basename(ruta))
+    referencia = m.group(1) if m else ""
+
+    # 2) Columna de monto: encabezado con "amt"/"amount"/"pymt"
+    hr = c_monto = None
+    for r in range(min(hoja.nrows, 15)):
+        for c in range(hoja.ncols):
+            t = str(hoja.cell_value(r, c)).lower()
+            if "amt" in t or "amount" in t or "pago" in t or "valor" in t:
+                hr, c_monto = r, c
+                break
+        if c_monto is not None:
+            break
+    if c_monto is None:
+        c_monto = 6  # respaldo: columna típica "Appl Pymt Amt"
+        hr = 0
+
+    # 3) Detalle + total. El TOTAL viene en una fila con la palabra "TOTAL".
+    detalle, total_fila, suma = [], None, 0.0
+    moneda = "USD"
+    for r in range(hr + 1, hoja.nrows):
+        fila_txt = " ".join(str(hoja.cell_value(r, c)) for c in range(hoja.ncols)).upper()
+        monto = num(hoja.cell_value(r, c_monto))
+        if "TOTAL" in fila_txt:
+            if monto:
+                total_fila = monto
+            continue
+        if monto:
+            # beneficiario = primera celda de texto larga de la fila
+            benef = ""
+            for c in range(hoja.ncols):
+                v = str(hoja.cell_value(r, c)).strip()
+                if len(v) > 4 and not v.replace(".", "").replace(",", "").isdigit():
+                    benef = v
+                    break
+            for c in range(hoja.ncols):
+                if str(hoja.cell_value(r, c)).strip().upper() in ("USD", "EUR", "JPY"):
+                    moneda = str(hoja.cell_value(r, c)).strip().upper()
+            detalle.append({"beneficiario": benef, "monto": round(monto, 2)})
+            suma += monto
+
+    valor = round(total_fila if total_fila is not None else suma, 2)
+    cred = (referencia[:4] + "-" + referencia[4:]) if len(referencia) == 5 else referencia
+    nota = (f'Considerar desembolso realizado a través de la modalidad '
+            f'"pago directo", crédito {cred}') if cred else \
+           'Considerar desembolso realizado a través de la modalidad "pago directo"'
+
+    return {
+        "acreedor": acreedor, "prestamo": prestamo, "referencia": cred or referencia,
+        "valor": valor, "moneda": moneda, "nota": nota, "detalle": detalle,
+        "concepto": "Desembolsos",
+    }
+
+
+# -------------------------------------------------------------------------
 # CONCILIACIÓN
 # -------------------------------------------------------------------------
 def conciliar(mef, bce):

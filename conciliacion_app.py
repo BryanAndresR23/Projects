@@ -61,6 +61,11 @@ def init_db():
         estado TEXT,
         fecha_corrida TEXT
     )''')
+    # Migración: columna 'nota' (para pagos directos agregados manualmente)
+    try:
+        c.execute("ALTER TABLE conciliaciones ADD COLUMN nota TEXT DEFAULT ''")
+    except Exception:
+        pass
     conn.commit()
     conn.close()
 
@@ -244,10 +249,86 @@ def api_historial():
 
 @app.route("/api/periodo/<periodo>")
 def api_periodo(periodo):
-    rows = db_q("""SELECT acreedor, concepto, mef, bce, diferencia, estado
+    rows = db_q("""SELECT acreedor, concepto, mef, bce, diferencia, estado, nota
                    FROM conciliaciones WHERE periodo = ? ORDER BY id""",
                 (periodo,), fetch=True)
     return jsonify({"ok": True, "periodo": periodo, "registros": rows or []})
+
+
+# -------------------------------------------------------------------------
+# Resultado consolidado de un periodo desde la BD (reutilizado por ajustes)
+# -------------------------------------------------------------------------
+def _resultado_periodo(periodo):
+    rows = db_q("""SELECT acreedor, concepto, mef, bce, diferencia, estado, nota
+                   FROM conciliaciones WHERE periodo = ? ORDER BY id""",
+                (periodo,), fetch=True) or []
+    filas = [(r["acreedor"], r["concepto"], r["mef"], r["bce"],
+              r["diferencia"], r["estado"]) for r in rows]
+    conciliados = sum(1 for r in rows if r["estado"] == "CONCILIADO")
+    diferencias = len(rows) - conciliados
+    total_dif = round(sum(abs(r["diferencia"]) for r in rows if r["estado"] == "DIFERENCIA"), 2)
+    totales = [{"acreedor": ac, **t} for ac, t in C.totales_por_cartera(filas).items()]
+    return {
+        "ok": True, "periodo": periodo, "registros": rows,
+        "total": len(rows), "conciliados": conciliados, "diferencias": diferencias,
+        "total_diferencia": total_dif, "totales": totales,
+    }
+
+
+@app.route("/api/pago_directo", methods=["POST"])
+def api_pago_directo():
+    """Previsualiza los respaldos de pago directo del MEF (sin aplicar)."""
+    previos = []
+    storages = []
+    for campo in request.files:
+        storages.extend(request.files.getlist(campo))
+    for st in storages:
+        ruta = _guardar_subida(st)
+        if not ruta:
+            continue
+        try:
+            pd = C.leer_pago_directo(ruta)
+            pd["archivo"] = os.path.basename(ruta)
+            previos.append(pd)
+        except Exception as e:
+            previos.append({"archivo": st.filename, "error": str(e)})
+    return jsonify({"ok": True, "previos": previos})
+
+
+@app.route("/api/aplicar_pago_directo", methods=["POST"])
+def api_aplicar_pago_directo():
+    """Agrega un pago directo al lado del BCE (Desembolsos) y recalcula."""
+    data = request.json or {}
+    periodo = (data.get("periodo") or "").strip()
+    acreedor = (data.get("acreedor") or "").strip().upper()
+    concepto = (data.get("concepto") or "Desembolsos").strip()
+    valor = float(data.get("valor") or 0)
+    nota = (data.get("nota") or "").strip()
+    if not periodo or not acreedor or valor == 0:
+        return jsonify({"ok": False, "error": "Faltan periodo, acreedor o valor"})
+
+    fila = db_q("""SELECT * FROM conciliaciones
+                   WHERE periodo=? AND acreedor=? AND concepto=?""",
+                (periodo, acreedor, concepto), fetch=True)
+    ahora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    if fila:
+        r = fila[0]
+        nuevo_bce = round((r["bce"] or 0) + valor, 2)
+        dif = round((r["mef"] or 0) - nuevo_bce, 2) or 0.0
+        estado = "CONCILIADO" if abs(dif) <= C.TOLERANCIA else "DIFERENCIA"
+        nota_final = (r["nota"] + " | " + nota).strip(" |") if r["nota"] else nota
+        db_q("""UPDATE conciliaciones SET bce=?, diferencia=?, estado=?, nota=?
+                WHERE id=?""", (nuevo_bce, dif, estado, nota_final, r["id"]))
+    else:
+        # No existía fila de Desembolsos para esa cartera: se crea
+        dif = round(0 - valor, 2)
+        estado = "CONCILIADO" if abs(dif) <= C.TOLERANCIA else "DIFERENCIA"
+        db_q("""INSERT INTO conciliaciones
+                (periodo, acreedor, concepto, mef, bce, diferencia, estado, fecha_corrida, nota)
+                VALUES (?,?,?,?,?,?,?,?,?)""",
+             (periodo, acreedor, concepto, 0.0, valor, dif, estado, ahora, nota))
+
+    return jsonify(_resultado_periodo(periodo))
 
 
 # =============================================================================
@@ -468,6 +549,20 @@ PANEL_HTML = r"""<!doctype html>
       <section id="v-ajustes" class="hidden">
         <h3 class="sec">&#9881;&#65039; Ajustes y Pagos Directos</h3>
         <p class="sub">El sistema detecta las observaciones del MEF y explica cada diferencia o inconsistencia.</p>
+
+        <div class="card">
+          <h3 class="sec" style="font-size:15px">&#128228; Cargar respaldo de pago directo (MEF)</h3>
+          <p class="sub" style="margin:6px 0 12px">Sube el archivo que el MEF envia por Quipux (ej. <i>pagos_directos_ibrd_9722.xls</i>). La app extrae el valor y lo agrega al lado del BCE con su nota.</p>
+          <div class="drop" id="dzPd" ondrop="onDropPd(event)" ondragover="onOver(event)" ondragleave="onLeave(event)">
+            <div class="ic">&#128196;</div>
+            <div class="ti">Respaldo(s) de pago directo</div>
+            <div class="dz">&#128229; Arrastra aqui o haz clic &middot; .xls .xlsx</div>
+            <div class="btn-sel"><button class="lnk" onclick="document.getElementById('filePd').click()">&#128193; Seleccionar archivo(s)</button></div>
+            <input type="file" id="filePd" accept=".xls,.xlsx" multiple onchange="subirPd(this.files)">
+          </div>
+          <div id="pdPrev"></div>
+        </div>
+
         <div class="diaghead" id="diagHead">Ejecuta una conciliacion para ver el diagnostico.</div>
         <div id="diagList"></div>
       </section>
@@ -601,6 +696,46 @@ function pintarDiag(){
         <div class="dbox act"><div class="bt">&#9989; Accion requerida</div><div class="bd">${d.accion}</div></div>
       </div></div>`;
   }).join("");
+}
+
+// ---- Pagos directos: subir respaldo, previsualizar y aplicar ----
+function onDropPd(e){e.preventDefault();e.currentTarget.classList.remove("over");if(e.dataTransfer.files.length)subirPd(e.dataTransfer.files);}
+async function subirPd(files){
+  if(!PERIODO){alert("Primero ejecuta una conciliacion (necesito el periodo).");return;}
+  const fd=new FormData();[...files].forEach(f=>fd.append("archivos",f));
+  const prev=document.getElementById("pdPrev");prev.innerHTML="<p class='muted'>Leyendo respaldo...</p>";
+  const j=await (await fetch("/api/pago_directo",{method:"POST",body:fd})).json();
+  if(!j.ok){prev.innerHTML="<p style='color:#dc2626'>Error al leer</p>";return;}
+  prev.innerHTML=j.previos.map((p,i)=>{
+    if(p.error)return `<div class="dcard"><b>${p.archivo}</b>: <span style="color:#dc2626">${p.error}</span></div>`;
+    const det=(p.detalle||[]).map(d=>`<div class="muted" style="font-size:12px">&middot; ${d.beneficiario}: ${fmt(d.monto)}</div>`).join("");
+    return `<div class="dcard pd" id="pd${i}">
+      <div class="dh"><span class="dname">${p.acreedor||'?'}</span><span class="dtag pd">Pago Directo</span>
+        <span class="dmonto" style="color:var(--navy)">${p.prestamo||''}</span></div>
+      ${det}
+      <div class="frow" style="margin-top:10px;align-items:flex-end">
+        <div class="fld"><label>Cartera</label><input type="text" id="pdac${i}" value="${p.acreedor||''}" style="width:130px"></div>
+        <div class="fld"><label>Valor (USD)</label><input type="number" id="pdval${i}" value="${p.valor||0}" step="0.01" style="width:160px"></div>
+        <div class="fld" style="flex:1;min-width:260px"><label>Nota</label><input type="text" id="pdnota${i}" value="${(p.nota||'').replace(/"/g,'&quot;')}" style="width:100%"></div>
+        <button class="btn" onclick="aplicarPd(${i})">&#10133; Agregar al BCE</button>
+      </div></div>`;
+  }).join("");
+}
+async function aplicarPd(i){
+  const acreedor=document.getElementById("pdac"+i).value.trim();
+  const valor=parseFloat(document.getElementById("pdval"+i).value)||0;
+  const nota=document.getElementById("pdnota"+i).value.trim();
+  if(!acreedor||!valor){alert("Falta cartera o valor");return;}
+  const j=await (await fetch("/api/aplicar_pago_directo",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({periodo:PERIODO,acreedor,concepto:"Desembolsos",valor,nota})})).json();
+  if(!j.ok){alert(j.error||"Error");return;}
+  DATA=j.registros;TOTALES=j.totales||[];
+  RESUMEN={...RESUMEN,total:j.total,con:j.conciliados,dif:j.diferencias,sum:j.total_diferencia};
+  document.getElementById("pd"+i).style.opacity=".5";
+  document.getElementById("estadoSide").innerHTML=
+    `<span style="color:#7ee2a8">${j.conciliados} conciliadas</span><br><span style="color:#f3a9a9">${j.diferencias} con diferencia</span>`;
+  pintarResultados();pintarCert();
+  alert("Pago directo agregado a "+acreedor+". Revisa Resultados: la cartera deberia cuadrar.");
 }
 
 async function exportar(){
