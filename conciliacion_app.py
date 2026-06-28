@@ -251,248 +251,290 @@ PANEL_HTML = r"""<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Conciliacion BCE vs MEF</title>
+<title>Conciliacion Deuda Externa Publica</title>
 <style>
   :root{
-    --bg:#0b1020; --bg2:#0f1630; --panel:rgba(255,255,255,.04);
-    --line:rgba(255,255,255,.10); --txt:#eef2f7; --muted:#9aa6bd;
-    --ok:#22c55e; --okd:#0f3d24; --bad:#ef4444; --badd:#40161a;
-    --accent:#6366f1; --accent2:#22d3ee; --gold:#f59e0b;
+    --navy:#16315a; --blue:#2563eb; --blue2:#1d4ed8;
+    --bg:#eef1f6; --card:#fff; --line:#e3e8f0; --txt:#1f2a3d; --muted:#64748b;
+    --ok:#16a34a; --okbg:#e9f8ef; --bad:#dc2626; --badbg:#fdeaea; --gold:#d97706; --yellow:#ffd100;
   }
   *{box-sizing:border-box}
   html,body{margin:0;height:100%}
-  body{background:
-        radial-gradient(1100px 600px at 12% -8%, #1b2a6b33, transparent 60%),
-        radial-gradient(900px 500px at 100% 0%, #0e749035, transparent 55%),
-        linear-gradient(180deg,var(--bg),var(--bg2));
-        color:var(--txt);font-family:"Segoe UI",system-ui,sans-serif;font-size:14px}
-  .wrap{max-width:1240px;margin:0 auto;padding:0 26px 40px}
-
-  header{padding:26px 0 18px;display:flex;align-items:center;gap:16px}
-  .logo{width:48px;height:48px;border-radius:14px;flex:none;display:grid;place-items:center;
-        font-size:24px;background:linear-gradient(135deg,var(--accent),var(--accent2));
-        box-shadow:0 8px 24px #6366f155}
-  header h1{margin:0;font-size:22px;letter-spacing:.2px}
-  header p{margin:3px 0 0;color:var(--muted);font-size:12.5px}
-
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:18px;
-        padding:22px;margin-bottom:22px;backdrop-filter:blur(8px);
-        box-shadow:0 10px 30px #00000040}
-  .glow{position:relative;overflow:hidden}
-  .glow::before{content:"";position:absolute;inset:-1px;border-radius:18px;padding:1px;
-        background:linear-gradient(120deg,#6366f155,#22d3ee44,transparent);
-        -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
-        -webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none}
-
-  /* Dropzone */
-  .drop{border:2px dashed var(--line);border-radius:16px;padding:30px 18px;text-align:center;
-        cursor:pointer;transition:.18s;color:var(--muted);background:rgba(255,255,255,.02)}
-  .drop:hover{border-color:var(--accent);color:var(--txt);transform:translateY(-1px)}
-  .drop.over{border-color:var(--accent2);background:#22d3ee14;color:var(--txt)}
-  .drop.set{border-style:solid;border-color:var(--ok);background:#22c55e12;color:var(--txt)}
-  .drop .big{font-size:34px;line-height:1;margin-bottom:10px}
-  .drop .ttl{font-weight:600;font-size:15px} .drop .fn{margin-top:9px;font-size:12.5px;color:#34d399;word-break:break-all}
-  .drop input{display:none}
-
-  label{display:block;font-size:11.5px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px}
-  input[type=text]{background:#0a1024;border:1px solid var(--line);color:var(--txt);
-        border-radius:10px;padding:11px 13px;width:100%;font-size:14px}
-  .row{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-end}
-  button{border:0;border-radius:11px;padding:12px 22px;font-size:14px;font-weight:700;cursor:pointer;
-        color:#fff;background:linear-gradient(135deg,var(--accent),#4f46e5);
-        box-shadow:0 8px 22px #6366f155;transition:.15s}
-  button:hover{filter:brightness(1.08);transform:translateY(-1px)}
-  button:disabled{opacity:.55;cursor:wait}
-  button.ghost{background:transparent;border:1px solid var(--line);color:var(--txt);box-shadow:none}
-
-  /* Resumen: donut + stats */
-  .resumen{display:grid;grid-template-columns:200px 1fr;gap:24px;align-items:center}
-  @media(max-width:720px){.resumen{grid-template-columns:1fr}}
-  .donut{width:180px;height:180px;border-radius:50%;margin:auto;position:relative;
-         display:grid;place-items:center;transition:.6s}
-  .donut::after{content:"";position:absolute;inset:18px;border-radius:50%;background:var(--bg2)}
+  body{display:flex;background:var(--bg);color:var(--txt);font-family:"Segoe UI",system-ui,sans-serif;font-size:14px}
+  .side{width:248px;flex:none;background:linear-gradient(180deg,var(--navy),#102241);color:#dce5f5;display:flex;flex-direction:column;min-height:100vh}
+  .brand{padding:22px 20px 18px;border-bottom:1px solid #ffffff1a}
+  .brand .flag{font-size:26px}
+  .brand h2{margin:8px 0 2px;font-size:16px;letter-spacing:.5px;color:#fff}
+  .brand small{color:#9fb3d4;font-size:11.5px}
+  .nav{padding:14px 12px;flex:1}
+  .nav .it{display:flex;gap:12px;align-items:center;padding:11px 12px;border-radius:10px;cursor:pointer;color:#c6d4ec;transition:.15s;margin-bottom:4px}
+  .nav .it:hover{background:#ffffff12}
+  .nav .it.act{background:#ffffff1a;color:#fff}
+  .nav .it .num{width:26px;height:26px;border-radius:50%;flex:none;display:grid;place-items:center;font-size:12px;font-weight:800;background:#ffffff1f;color:#fff}
+  .nav .it.act .num{background:var(--yellow);color:#16315a}
+  .nav .it .tt{font-weight:600;font-size:13.5px}
+  .nav .it .ss{font-size:11px;color:#9fb3d4}
+  .side .estado{padding:16px 20px;border-top:1px solid #ffffff1a;font-size:11.5px}
+  .side .estado .h{color:#9fb3d4;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px}
+  .main{flex:1;min-width:0;display:flex;flex-direction:column}
+  .top{background:#fff;border-bottom:1px solid var(--line);padding:14px 28px;display:flex;align-items:center;justify-content:space-between}
+  .top h1{margin:0;font-size:17px;color:var(--navy)}
+  .top .right{display:flex;gap:12px;align-items:center}
+  .badge{background:#dbe5fb;color:var(--blue2);padding:5px 12px;border-radius:999px;font-size:12px;font-weight:700}
+  .badge.ok{background:var(--okbg);color:var(--ok)}
+  .content{padding:26px 28px;overflow:auto}
+  h3.sec{display:flex;align-items:center;gap:10px;color:var(--navy);margin:0 0 4px}
+  .sub{color:var(--muted);margin:0 0 18px;font-size:13px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px;margin-bottom:20px;box-shadow:0 1px 3px #0f172a0d}
+  .info{border-left:4px solid var(--blue);background:#f3f7ff;border-radius:8px;padding:12px 16px;margin-bottom:20px;font-size:13px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  @media(max-width:820px){.grid2{grid-template-columns:1fr}}
+  .drop{border:2px dashed var(--line);border-radius:14px;padding:26px 18px;text-align:center;transition:.18s;background:#fafbfe}
+  .drop.over{border-color:var(--blue);background:#eef4ff}
+  .drop.set{border-color:var(--ok);background:var(--okbg)}
+  .drop .ic{font-size:34px}
+  .drop .ti{font-weight:700;font-size:16px;margin-top:8px;color:var(--navy)}
+  .drop .de{color:var(--muted);font-size:12.5px;margin-top:2px}
+  .drop .dz{color:var(--muted);font-size:12px;margin-top:10px}
+  .drop .fn{margin-top:8px;font-size:12.5px;color:var(--ok);font-weight:600;word-break:break-all}
+  .drop .btn-sel{margin-top:16px;border-top:1px solid var(--line);padding-top:14px}
+  .lnk{color:var(--blue);font-weight:700;cursor:pointer;font-size:14px;background:none;border:0}
+  .lnk:hover{text-decoration:underline}
+  input[type=file]{display:none}
+  .frow{display:flex;gap:18px;flex-wrap:wrap}
+  .fld label{display:block;font-size:11.5px;color:var(--muted);font-weight:700;margin-bottom:6px}
+  select,input[type=text],input[type=number]{border:1px solid var(--line);border-radius:9px;padding:9px 11px;font-size:14px;background:#fff;color:var(--txt)}
+  .footbar{display:flex;align-items:center;justify-content:space-between;gap:16px}
+  .btn{background:linear-gradient(135deg,var(--blue),var(--blue2));color:#fff;border:0;border-radius:10px;padding:12px 22px;font-size:14px;font-weight:800;cursor:pointer;box-shadow:0 6px 16px #2563eb40}
+  .btn:hover{filter:brightness(1.07)} .btn:disabled{opacity:.5;cursor:not-allowed;box-shadow:none}
+  .btn.alt{background:#fff;color:var(--blue);border:1px solid #c7d6f5;box-shadow:none}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px}
+  @media(max-width:820px){.stats{grid-template-columns:repeat(2,1fr)}}
+  .stat{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  .stat .n{font-size:24px;font-weight:800} .stat .l{font-size:11.5px;color:var(--muted)}
+  .stat.ok .n{color:var(--ok)} .stat.bad .n{color:var(--bad)} .stat.gold .n{color:var(--gold)}
+  .donutwrap{display:flex;gap:22px;align-items:center;flex-wrap:wrap}
+  .donut{width:140px;height:140px;border-radius:50%;display:grid;place-items:center;position:relative}
+  .donut::after{content:"";position:absolute;inset:16px;border-radius:50%;background:#fff}
   .donut .ct{position:relative;text-align:center;z-index:1}
-  .donut .pct{font-size:34px;font-weight:800;line-height:1}
-  .donut .lb{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
-  .stats{display:flex;gap:14px;flex-wrap:wrap}
-  .stat{flex:1;min-width:150px;background:rgba(255,255,255,.03);border:1px solid var(--line);
-        border-radius:14px;padding:16px 18px}
-  .stat .ic{font-size:18px} .stat .n{font-size:26px;font-weight:800;margin-top:4px}
-  .stat .l{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
-  .stat.ok .n{color:#4ade80} .stat.bad .n{color:#f87171} .stat.gold .n{color:#fbbf24}
-
-  /* Toolbar / chips */
-  .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:4px 0 14px}
-  .chip{padding:7px 14px;border-radius:999px;font-size:12.5px;cursor:pointer;
-        border:1px solid var(--line);color:var(--muted);background:transparent;transition:.15s}
-  .chip:hover{color:var(--txt)} .chip.act{background:var(--accent);border-color:transparent;color:#fff}
-  .spacer{flex:1}
-
+  .donut .pct{font-size:28px;font-weight:800} .donut .lb{font-size:10.5px;color:var(--muted);text-transform:uppercase}
   table{width:100%;border-collapse:collapse}
-  th,td{padding:11px 12px;text-align:left;border-bottom:1px solid var(--line)}
-  th{font-size:10.5px;text-transform:uppercase;color:var(--muted);letter-spacing:.5px;
-     position:sticky;top:0;background:#0e1430}
+  th,td{padding:10px 12px;text-align:left;border-bottom:1px solid var(--line)}
+  th{font-size:10.5px;text-transform:uppercase;color:var(--muted);letter-spacing:.4px;position:sticky;top:0;background:#f7f9fc}
   td.num{text-align:right;font-variant-numeric:tabular-nums}
-  tbody tr{transition:.12s} tbody tr:hover{background:rgba(255,255,255,.04)}
-  tr.dif td{background:#ef444410} tr.con td{background:#22c55e0d}
-  .acr{font-weight:700}
-  .grp td{background:#11183a;font-weight:800;font-size:12px;letter-spacing:.5px;color:#c7d2fe;
-          text-transform:uppercase;border-top:1px solid var(--line)}
-  .pill{padding:4px 11px;border-radius:999px;font-size:11px;font-weight:800;letter-spacing:.3px}
-  .pill.con{background:#22c55e22;color:#4ade80;border:1px solid #22c55e55}
-  .pill.dif{background:#ef444422;color:#f87171;border:1px solid #ef444455}
-  .bar{height:7px;border-radius:6px;background:#ffffff14;overflow:hidden;margin-top:14px}
-  .bar > i{display:block;height:100%;background:linear-gradient(90deg,var(--ok),#16a34a);transition:.6s}
-
+  tbody tr:hover td{background:#f7f9fc}
+  tr.grp td{background:#eef3fb;font-weight:800;color:var(--navy);text-transform:uppercase;font-size:12px}
+  tr.dif td{background:#fdf3f3} tr.con td{background:#f3fbf6}
+  .pill{padding:4px 10px;border-radius:999px;font-size:10.5px;font-weight:800}
+  .pill.con{background:var(--okbg);color:var(--ok)} .pill.dif{background:var(--badbg);color:var(--bad)}
+  .chip{padding:7px 13px;border-radius:999px;font-size:12.5px;cursor:pointer;border:1px solid var(--line);background:#fff;color:var(--muted)}
+  .chip.act{background:var(--blue);color:#fff;border-color:transparent}
+  .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:6px 0 14px}
+  .scroll{max-height:540px;overflow:auto;border:1px solid var(--line);border-radius:12px}
   .hidden{display:none}
-  .hist a{color:#a5b4fc;cursor:pointer;text-decoration:none;display:inline-block;margin:0 12px 8px 0}
-  .hist a:hover{color:#fff}
-  #msg{margin-top:12px;font-size:13px}
-  .scroll{max-height:560px;overflow:auto;border-radius:12px;border:1px solid var(--line)}
+  .hist a{display:block;padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;cursor:pointer;color:var(--navy);text-decoration:none;background:#fff}
+  .hist a:hover{background:#f3f7ff}
+  .alert{border-radius:10px;padding:12px 14px;font-size:13px;margin-bottom:16px}
+  #msg{font-size:13px;margin-top:6px}
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <div class="logo">🤝</div>
-    <div>
-      <h1>Conciliacion BCE &times; MEF</h1>
-      <p>Deuda Externa Publica &middot; cruce mensual por acreedor &middot; 6 conceptos de pago</p>
+  <aside class="side">
+    <div class="brand">
+      <div class="flag">&#127466;&#127464;</div>
+      <h2>CONCILIACION<br>DEUDA EXTERNA</h2>
+      <small>Subgerencia de Deuda Publica</small>
     </div>
-  </header>
+    <nav class="nav" id="nav">
+      <div class="it act" data-v="cargar"><div class="num">1</div><div><div class="tt">Cargar Reportes</div><div class="ss">MEF + BCE</div></div></div>
+      <div class="it" data-v="resultados"><div class="num">2</div><div><div class="tt">Resultados</div><div class="ss">Cruce automatico</div></div></div>
+      <div class="it" data-v="cert"><div class="num">3</div><div><div class="tt">Certificacion</div><div class="ss">Reporte oficial</div></div></div>
+      <div class="it" data-v="historial"><div class="num">4</div><div><div class="tt">Historial</div><div class="ss">Periodos anteriores</div></div></div>
+    </nav>
+    <div class="estado">
+      <div class="h">Estado de carteras</div>
+      <div id="estadoSide" style="color:#9fb3d4">Sin datos</div>
+    </div>
+  </aside>
 
-  <div class="card glow">
-    <div class="drop" id="dzAmbos" onclick="document.getElementById('ambos').click()">
-      <div class="big">📥</div>
-      <div class="ttl">Arrastra aqui los <b>dos reportes</b> &mdash; BCE y MEF</div>
-      <div class="muted" style="font-size:12.5px;margin-top:4px">o haz clic para elegirlos &middot; no importa el orden, la app reconoce cada uno</div>
-      <div class="fn" id="fnAmbos"></div>
-      <input type="file" id="ambos" accept=".xls,.xlsx" multiple>
-    </div>
-    <div class="row" style="margin-top:18px">
-      <div style="max-width:200px;flex:1">
-        <label>Periodo (AAAA-MM)</label>
-        <input type="text" id="periodo" placeholder="2026-03">
+  <div class="main">
+    <div class="top">
+      <h1>Sistema de Conciliacion &ndash; Deuda Externa Publica</h1>
+      <div class="right">
+        <span class="badge" id="periodoBadge">Sin periodo</span>
+        <span class="muted" id="analistaTop">Analista MEF</span>
       </div>
-      <button id="btn" onclick="conciliar()">⚡ Cruzar reportes</button>
     </div>
-    <div id="msg"></div>
-  </div>
+    <div class="content">
 
-  <div class="card glow hidden" id="resCard">
-    <div class="resumen">
-      <div>
-        <div class="donut" id="donut">
-          <div class="ct"><div class="pct" id="pct">0%</div><div class="lb">Conciliado</div></div>
+      <section id="v-cargar">
+        <h3 class="sec">&#128193; Cargar Reportes</h3>
+        <p class="sub">Arrastra los archivos sobre las tarjetas o usa los botones. Soporta .xls (Excel 97-2003) y .xlsx</p>
+        <div class="info"><b>Mapeo:</b> Desembolsos (MEF Col C &harr; BCE Col K) &middot; Amortizaciones (D &harr; U) &middot; Intereses (E &harr; V) &middot; Comisiones (F &harr; W) &middot; Int.Condonados (G &harr; Y) &middot; Int.Mora (H &harr; X)</div>
+        <div class="grid2">
+          <div class="drop" id="dzMef" ondrop="onDrop(event,'mef')" ondragover="onOver(event)" ondragleave="onLeave(event)">
+            <div class="ic">&#127963;&#65039;</div>
+            <div class="ti">Reporte MEF</div>
+            <div class="de">Ministerio de Economia y Finanzas</div>
+            <div class="dz">&#128229; Arrastra aqui o haz clic &middot; .xls .xlsx</div>
+            <div class="fn" id="fnMef"></div>
+            <div class="btn-sel"><button class="lnk" onclick="document.getElementById('fileMef').click()">&#128193; Seleccionar archivo MEF</button></div>
+            <input type="file" id="fileMef" accept=".xls,.xlsx" onchange="onPick(this,'mef')">
+          </div>
+          <div class="drop" id="dzBce" ondrop="onDrop(event,'bce')" ondragover="onOver(event)" ondragleave="onLeave(event)">
+            <div class="ic">&#127974;</div>
+            <div class="ti">Reporte BCE</div>
+            <div class="de">Banco Central del Ecuador</div>
+            <div class="dz">&#128229; Arrastra aqui o haz clic &middot; .xls .xlsx</div>
+            <div class="fn" id="fnBce"></div>
+            <div class="btn-sel"><button class="lnk" onclick="document.getElementById('fileBce').click()">&#128193; Seleccionar archivo BCE</button></div>
+            <input type="file" id="fileBce" accept=".xls,.xlsx" onchange="onPick(this,'bce')">
+          </div>
         </div>
-      </div>
-      <div>
-        <div class="stats" id="stats"></div>
-        <div class="bar"><i id="barFill" style="width:0%"></i></div>
-        <div class="toolbar" style="margin-top:16px">
-          <button class="chip act" data-f="all" onclick="setFiltro('all',this)">Todos</button>
-          <button class="chip" data-f="dif" onclick="setFiltro('dif',this)">Solo diferencias</button>
-          <button class="chip" data-f="con" onclick="setFiltro('con',this)">Solo conciliados</button>
-          <span class="spacer"></span>
-          <span class="muted" id="periodoLbl" style="font-size:12px"></span>
-          <button class="ghost" onclick="exportar()">⬇ Exportar Excel</button>
+        <div class="card">
+          <h3 class="sec" style="font-size:15px">&#128197; Periodo</h3>
+          <div class="frow" style="margin-top:10px">
+            <div class="fld"><label>Mes</label>
+              <select id="mes">
+                <option>Enero</option><option>Febrero</option><option>Marzo</option><option>Abril</option>
+                <option>Mayo</option><option>Junio</option><option>Julio</option><option>Agosto</option>
+                <option>Septiembre</option><option>Octubre</option><option>Noviembre</option><option>Diciembre</option>
+              </select></div>
+            <div class="fld"><label>Anio</label><input type="number" id="anio" value="2026" style="width:110px"></div>
+            <div class="fld"><label>Analista</label><input type="text" id="analista" value="Analista MEF" style="width:200px"></div>
+          </div>
         </div>
-      </div>
-    </div>
-    <div class="scroll" style="margin-top:18px">
-      <table>
-        <thead><tr>
-          <th>Acreedor</th><th>Concepto</th>
-          <th style="text-align:right">MEF (USD)</th>
-          <th style="text-align:right">BCE (USD)</th>
-          <th style="text-align:right">Diferencia</th>
-          <th>Estado</th>
-        </tr></thead>
-        <tbody id="tbody"></tbody>
-      </table>
-    </div>
-  </div>
+        <div class="card footbar">
+          <span class="muted" id="cargarMsg">Carga ambos archivos para continuar.</span>
+          <button class="btn" id="btnRun" onclick="ejecutar()" disabled>&#9654; Ejecutar Conciliacion</button>
+        </div>
+        <div id="msg"></div>
+      </section>
 
-  <div class="card hist">
-    <label>Historial de periodos conciliados</label>
-    <div id="hist" class="muted">Cargando&hellip;</div>
+      <section id="v-resultados" class="hidden">
+        <h3 class="sec">&#128202; Resultados de la Conciliacion</h3>
+        <p class="sub" id="resSub">&mdash;</p>
+        <div id="resAlert"></div>
+        <div class="card">
+          <div class="donutwrap">
+            <div class="donut" id="donut"><div class="ct"><div class="pct" id="pct">0%</div><div class="lb">Conciliado</div></div></div>
+            <div style="flex:1;min-width:260px"><div class="stats" id="stats"></div></div>
+          </div>
+          <div class="toolbar">
+            <button class="chip act" data-f="all" onclick="setFiltro('all',this)">Todos</button>
+            <button class="chip" data-f="dif" onclick="setFiltro('dif',this)">Solo diferencias</button>
+            <button class="chip" data-f="con" onclick="setFiltro('con',this)">Solo conciliados</button>
+            <span style="flex:1"></span>
+            <button class="btn alt" onclick="exportar()">&#11015; Exportar Excel</button>
+          </div>
+          <div class="scroll">
+            <table><thead><tr>
+              <th>Acreedor</th><th>Concepto</th>
+              <th style="text-align:right">MEF (USD)</th><th style="text-align:right">BCE (USD)</th>
+              <th style="text-align:right">Diferencia</th><th>Estado</th>
+            </tr></thead><tbody id="tbody"></tbody></table>
+          </div>
+        </div>
+      </section>
+
+      <section id="v-cert" class="hidden">
+        <h3 class="sec">&#128220; Certificacion</h3>
+        <p class="sub">Reporte oficial imprimible del periodo conciliado.</p>
+        <div class="card" id="certBody"><span class="muted">Ejecuta una conciliacion para generar la certificacion.</span></div>
+      </section>
+
+      <section id="v-historial" class="hidden">
+        <h3 class="sec">&#128451;&#65039; Historial</h3>
+        <p class="sub">Periodos conciliados guardados en el servidor.</p>
+        <div class="card"><div id="hist" class="hist"></div></div>
+      </section>
+
+    </div>
   </div>
-</div>
 
 <script>
-let DATA=[], PERIODO="", FILTRO="all";
+const MESES=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+let FILES={mef:null,bce:null}, DATA=[], PERIODO="", FILTRO="all", RESUMEN=null;
 const fmt=n=>(n||0).toLocaleString("es-EC",{minimumFractionDigits:2,maximumFractionDigits:2});
-function msg(t,err){const m=document.getElementById("msg");m.textContent=t;m.style.color=err?"#f87171":"#34d399";}
-
-// Drag & drop (una zona, dos archivos, cualquier orden)
-const dz=document.getElementById("dzAmbos"),input=document.getElementById("ambos"),fn=document.getElementById("fnAmbos");
+function msg(t,err){const m=document.getElementById("msg");m.textContent=t;m.style.color=err?"#dc2626":"#16a34a";}
 const valido=f=>f&&/\.(xls|xlsx)$/i.test(f.name);
-function mostrarAmbos(){const fs=[...input.files];
-  if(fs.length){dz.classList.add("set");fn.innerHTML=fs.map(f=>"✓ "+f.name).join("<br>");}
-  else{dz.classList.remove("set");fn.textContent="";}}
-input.addEventListener("change",mostrarAmbos);
-["dragenter","dragover"].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();dz.classList.add("over");}));
-["dragleave","drop"].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();dz.classList.remove("over");}));
-dz.addEventListener("drop",e=>{const fs=[...e.dataTransfer.files].filter(valido);
-  if(!fs.length){msg("Solo se aceptan archivos .xls o .xlsx",true);return;}
-  const dt=new DataTransfer();fs.slice(0,2).forEach(f=>dt.items.add(f));input.files=dt.files;mostrarAmbos();});
 
-async function conciliar(){
-  const fs=[...input.files];
-  if(fs.length<2){msg("Carga los DOS reportes (BCE y MEF) en la zona de arriba.",true);return;}
-  const fd=new FormData();fs.forEach(f=>fd.append("archivos",f));
-  fd.append("periodo",document.getElementById("periodo").value.trim());
-  const btn=document.getElementById("btn");btn.disabled=true;msg("Procesando…");
+function recibir(f,lado){
+  if(!valido(f)){alert("Solo .xls o .xlsx");return;}
+  FILES[lado]=f;
+  document.getElementById(lado==="mef"?"fnMef":"fnBce").textContent="✓ "+f.name;
+  document.getElementById(lado==="mef"?"dzMef":"dzBce").classList.add("set");
+  const listo=FILES.mef&&FILES.bce;
+  document.getElementById("btnRun").disabled=!listo;
+  document.getElementById("cargarMsg").textContent=listo?"Listo para conciliar.":"Carga ambos archivos para continuar.";
+}
+function onPick(inp,lado){if(inp.files[0])recibir(inp.files[0],lado);}
+function onOver(e){e.preventDefault();e.currentTarget.classList.add("over");}
+function onLeave(e){e.currentTarget.classList.remove("over");}
+function onDrop(e,lado){e.preventDefault();e.currentTarget.classList.remove("over");const f=e.dataTransfer.files[0];if(f)recibir(f,lado);}
+
+async function ejecutar(){
+  if(!(FILES.mef&&FILES.bce))return;
+  const mes=document.getElementById("mes").value, anio=document.getElementById("anio").value;
+  const periodo=anio+"-"+String(MESES.indexOf(mes)+1).padStart(2,"0");
+  const fd=new FormData();
+  fd.append("archivos",FILES.mef); fd.append("archivos",FILES.bce);
+  fd.append("periodo",periodo);
+  const btn=document.getElementById("btnRun");btn.disabled=true;msg("Procesando...");
   try{
     const j=await (await fetch("/api/conciliar",{method:"POST",body:fd})).json();
     if(!j.ok){msg(j.error||"Error",true);btn.disabled=false;return;}
     DATA=j.registros;PERIODO=j.periodo;
-    pintarResumen(j.total,j.conciliados,j.diferencias,j.total_diferencia);
-    document.getElementById("periodoLbl").textContent="Periodo "+j.periodo+" · "+j.fecha;
-    document.getElementById("resCard").classList.remove("hidden");
-    render();cargarHistorial();
-    let det="BCE = "+j.archivo_bce+"  ·  MEF = "+j.archivo_mef;
-    if(j.avisos&&j.avisos.length)det+="  ⚠ "+j.avisos.join(" / ");
-    msg((j.diferencias===0?"✅ Todo concilia. ":"")+ "Cruce listo ("+j.conciliados+" conciliados, "+j.diferencias+" con diferencia). "+det);
+    RESUMEN={total:j.total,con:j.conciliados,dif:j.diferencias,sum:j.total_diferencia,
+             mes,anio,analista:document.getElementById("analista").value,fecha:j.fecha};
+    pintarResultados();pintarCert();cargarHistorial();
+    document.getElementById("periodoBadge").textContent=mes+" "+anio;
+    document.getElementById("periodoBadge").className="badge "+(j.diferencias===0?"ok":"");
+    document.getElementById("analistaTop").textContent=RESUMEN.analista;
+    document.getElementById("estadoSide").innerHTML=
+      `<span style="color:#7ee2a8">${j.conciliados} conciliadas</span><br><span style="color:#f3a9a9">${j.diferencias} con diferencia</span>`;
+    let det="BCE = "+j.archivo_bce+"  &middot;  MEF = "+j.archivo_mef;
+    if(j.avisos&&j.avisos.length)det+="  ! "+j.avisos.join(" / ");
+    msg("Cruce listo. "+det);
+    irA("resultados");
   }catch(e){msg(e.message,true);}
   btn.disabled=false;
 }
 
-function pintarResumen(total,con,dif,sumdif){
+function pintarResultados(){
+  const {total,con,dif,sum}=RESUMEN;
   const pct=total?Math.round(con*100/total):0;
-  const color=pct>=100?"#22c55e":pct>=60?"#f59e0b":"#ef4444";
+  const color=pct>=100?"#16a34a":pct>=60?"#d97706":"#dc2626";
   const d=document.getElementById("donut");
-  d.style.background=`conic-gradient(${color} ${pct*3.6}deg, #ffffff14 0deg)`;
+  d.style.background=`conic-gradient(${color} ${pct*3.6}deg,#e5e9f0 0deg)`;
   document.getElementById("pct").textContent=pct+"%";
-  document.getElementById("barFill").style.width=pct+"%";
   document.getElementById("stats").innerHTML=
-    `<div class="stat"><div class="ic">📊</div><div class="n">${total}</div><div class="l">Comparaciones</div></div>
-     <div class="stat ok"><div class="ic">✅</div><div class="n">${con}</div><div class="l">Conciliados</div></div>
-     <div class="stat bad"><div class="ic">⚠️</div><div class="n">${dif}</div><div class="l">Con diferencia</div></div>
-     <div class="stat gold"><div class="ic">Σ</div><div class="n">${fmt(sumdif)}</div><div class="l">|Diferencia| USD</div></div>`;
+    `<div class="stat"><div class="n">${total}</div><div class="l">Comparaciones</div></div>
+     <div class="stat ok"><div class="n">${con}</div><div class="l">Conciliados</div></div>
+     <div class="stat bad"><div class="n">${dif}</div><div class="l">Con diferencia</div></div>
+     <div class="stat gold"><div class="n">${fmt(sum)}</div><div class="l">&Sigma;|Diferencia| USD</div></div>`;
+  document.getElementById("resSub").textContent=`Periodo ${RESUMEN.mes} ${RESUMEN.anio} &middot; ${con} de ${total} conceptos conciliados`.replace("&middot;","·");
+  document.getElementById("resAlert").innerHTML = dif===0
+    ? `<div class="alert" style="background:#ecfdf3;border:1px solid #bbf7d0;color:#166534">✅ Todas las carteras concilian exactamente. No hay diferencias.</div>`:"";
+  render();
 }
-
 function setFiltro(f,el){FILTRO=f;document.querySelectorAll(".chip").forEach(c=>c.classList.remove("act"));el.classList.add("act");render();}
-
 function render(){
-  const tb=document.getElementById("tbody");tb.innerHTML="";
   let rows=DATA;
   if(FILTRO==="dif")rows=DATA.filter(r=>r.estado==="DIFERENCIA");
   if(FILTRO==="con")rows=DATA.filter(r=>r.estado==="CONCILIADO");
+  const tb=document.getElementById("tbody");tb.innerHTML="";
+  if(!rows.length){tb.innerHTML=`<tr><td colspan="6" class="muted" style="text-align:center;padding:24px">Sin filas para este filtro.</td></tr>`;return;}
   let actual=null;
   rows.forEach(r=>{
     if(r.acreedor!==actual){actual=r.acreedor;
-      const g=document.createElement("tr");g.className="grp";
-      g.innerHTML=`<td colspan="6">${r.acreedor}</td>`;tb.appendChild(g);}
-    const tr=document.createElement("tr");
-    tr.className=r.estado==="DIFERENCIA"?"dif":"con";
-    tr.innerHTML=`<td class="acr"></td><td>${r.concepto}</td>
-      <td class="num">${fmt(r.mef)}</td><td class="num">${fmt(r.bce)}</td>
-      <td class="num">${fmt(r.diferencia)}</td>
+      const g=document.createElement("tr");g.className="grp";g.innerHTML=`<td colspan="6">${r.acreedor}</td>`;tb.appendChild(g);}
+    const tr=document.createElement("tr");tr.className=r.estado==="DIFERENCIA"?"dif":"con";
+    tr.innerHTML=`<td></td><td>${r.concepto}</td><td class="num">${fmt(r.mef)}</td>
+      <td class="num">${fmt(r.bce)}</td><td class="num">${fmt(r.diferencia)}</td>
       <td><span class="pill ${r.estado==='DIFERENCIA'?'dif':'con'}">${r.estado}</span></td>`;
     tb.appendChild(tr);
   });
-  if(!rows.length)tb.innerHTML=`<tr><td colspan="6" class="muted" style="text-align:center;padding:26px">Sin filas para este filtro.</td></tr>`;
 }
 
 async function exportar(){
@@ -503,24 +545,48 @@ async function exportar(){
   a.href=u;a.download="Conciliacion_BCE_MEF_"+PERIODO+".xlsx";a.click();URL.revokeObjectURL(u);
 }
 
+function pintarCert(){
+  if(!RESUMEN)return;
+  const {total,con,dif,mes,anio,analista}=RESUMEN;
+  const fdif=DATA.filter(r=>r.estado==="DIFERENCIA");
+  const tdif=fdif.length
+    ? `<table style="margin-top:10px"><thead><tr><th>Acreedor</th><th>Concepto</th><th style="text-align:right">Diferencia</th></tr></thead><tbody>${fdif.map(r=>`<tr><td>${r.acreedor}</td><td>${r.concepto}</td><td class="num">${fmt(r.diferencia)}</td></tr>`).join("")}</tbody></table>`
+    : `<p style="color:#166534;font-weight:700">Sin diferencias: la conciliacion cuadra al 100%.</p>`;
+  document.getElementById("certBody").innerHTML=`
+    <div style="text-align:center;margin-bottom:10px">
+      <div style="font-size:26px">&#127466;&#127464;</div>
+      <h2 style="margin:6px 0;color:var(--navy)">CERTIFICACION DE CONCILIACION</h2>
+      <div class="muted">Deuda Externa Publica &middot; Ministerio de Economia y Finanzas del Ecuador</div>
+    </div>
+    <p>Se certifica que la conciliacion de pagos de deuda externa publica del periodo
+    <b>${mes} ${anio}</b>, entre los reportes del <b>BCE</b> y del <b>MEF</b>, arrojo
+    <b>${con}</b> conceptos conciliados de <b>${total}</b> comparados${dif?`, con <b>${dif}</b> diferencia(s) a revisar`:` (cuadre total)`}.</p>
+    ${tdif}
+    <p style="margin-top:18px">Analista responsable: <b>${analista}</b><br>Fecha de emision: <b>${new Date().toLocaleString("es-EC")}</b></p>
+    <button class="btn alt" onclick="window.print()" style="margin-top:10px">&#128424;&#65039; Imprimir / Guardar PDF</button>`;
+}
+
 async function cargarHistorial(){
   const j=await (await fetch("/api/historial")).json();
   const h=document.getElementById("hist");
-  if(!j.periodos||!j.periodos.length){h.textContent="Aun no hay conciliaciones.";return;}
-  h.innerHTML=j.periodos.map(p=>`<a onclick="verPeriodo('${p.periodo}')">📅 ${p.periodo} <span class="muted">(${p.conciliados}✓/${p.diferencias}✗)</span></a>`).join("");
+  if(!j.periodos||!j.periodos.length){h.innerHTML=`<span class="muted">Aun no hay conciliaciones.</span>`;return;}
+  h.innerHTML=j.periodos.map(p=>`<a onclick="verHist('${p.periodo}')">&#128197; <b>${p.periodo}</b> &nbsp; <span class="muted">${p.conciliados}✓ / ${p.diferencias}✗ &middot; ${p.ultima||''}</span></a>`).join("");
 }
-
-async function verPeriodo(p){
+async function verHist(p){
   const j=await (await fetch("/api/periodo/"+encodeURIComponent(p))).json();
   if(!j.ok)return;DATA=j.registros;PERIODO=p;
   const dif=DATA.filter(r=>r.estado==="DIFERENCIA").length,con=DATA.length-dif;
   const sum=DATA.filter(r=>r.estado==="DIFERENCIA").reduce((a,r)=>a+Math.abs(r.diferencia),0);
-  pintarResumen(DATA.length,con,dif,sum);
-  document.getElementById("periodoLbl").textContent="Periodo "+p+" (historial)";
-  document.getElementById("resCard").classList.remove("hidden");
-  render();window.scrollTo({top:0,behavior:"smooth"});
+  const part=p.split("-");
+  RESUMEN={total:DATA.length,con,dif,sum,mes:MESES[parseInt(part[1])-1]||"",anio:part[0],analista:document.getElementById("analista").value};
+  pintarResultados();pintarCert();irA("resultados");
 }
 
+function irA(v){
+  document.querySelectorAll(".nav .it").forEach(it=>it.classList.toggle("act",it.dataset.v===v));
+  ["cargar","resultados","cert","historial"].forEach(s=>document.getElementById("v-"+s).classList.toggle("hidden",s!==v));
+}
+document.getElementById("nav").addEventListener("click",e=>{const it=e.target.closest(".it");if(it)irA(it.dataset.v);});
 cargarHistorial();
 </script>
 </body>
