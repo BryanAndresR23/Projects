@@ -167,7 +167,7 @@ BCE_AL_COLS = {
     "Amortizaciones":       (["capital", "usd"], []),
     "Intereses":            (["inter", "usd"], ["mora", "comis", "condon"]),
     "Comisiones":           (["comis", "usd"], []),
-    "Intereses Condonados": (["condonados", "usd"], []),
+    "Intereses Condonados": (["condonad", "usd"], []),   # "Condonado" o "Condonados"
     "Interés por Mora":     (["mora", "usd"], []),
 }
 BCE_DEL_VALOR = (["valor", "usd"], [])          # Desembolsos: "Valor (USD)"
@@ -210,38 +210,66 @@ def leer_mef(ruta):
 
 def leer_bce(ruta):
     """{ organismo_MEF: {concepto: valor} } agregando las hojas de Giros.
-    Agrupación, identificador de detalle y cada rubro se ubican por título."""
+
+    Usa las filas de SUBTOTAL del propio BCE ('TOTAL <grupo>'), que es su
+    clasificación oficial y separa correctamente casos ambiguos (p. ej. los
+    Bonos Soberanos y el Bank of New York que comparten la agrupación 'OTROS',
+    pero el BCE subtotaliza como 'TOTAL BONOS' y 'TOTAL BANCOS').
+    Las columnas de cada rubro se ubican por TÍTULO, así no afecta que cambien
+    de posición entre meses (p. ej. 'Condonado (USD)' que se desplaza de columna).
+    Si no hubiera filas de subtotal, cae a sumar el detalle por agrupación."""
     libro = xlrd.open_workbook(ruta)
     agg = OrderedDict()
+
+    def _fila_acreedor(destino):
+        return agg.setdefault(destino, {nom: 0.0 for nom, *_ in CONCEPTOS})
 
     def acumula(hoja_pat, specs_valor, spec_ref, respaldo_ref):
         hoja = abrir_hoja(libro, hoja_pat)
         hr = fila_encabezado(hoja, "Agrupaci")
         cab = _celdas_encabezado(hoja, hr)
+        cols_val = {nom: buscar_col(cab, spec, cb) for nom, spec, cb in specs_valor}
+
+        # 1) Camino robusto: filas de subtotal 'TOTAL <grupo>'
+        encontrados = 0
+        for r in range(hr + 1, hoja.nrows):
+            etiqueta = None
+            for c in range(min(hoja.ncols, 3)):
+                t = str(hoja.cell_value(r, c)).strip()
+                if t.upper().startswith("TOTAL"):
+                    resto = t[5:].strip(" -:")
+                    etiqueta = resto  # vacío => gran total (se ignora)
+                    break
+            if not etiqueta:
+                continue
+            destino = acreedor_mef(etiqueta)
+            fila = _fila_acreedor(destino)
+            for nom, ci in cols_val.items():
+                if ci is not None:
+                    fila[nom] += num(hoja.cell_value(r, ci))
+            encontrados += 1
+        if encontrados:
+            return
+
+        # 2) Respaldo: sumar el detalle arrastrando la agrupación
         col_grupo = buscar_col(cab, SPEC_GRUPO, HOJA_GRUPO[hoja_pat])
         col_ref = buscar_col(cab, spec_ref, respaldo_ref)
-        # {concepto: índice de columna} ubicadas por título
-        cols_val = {nom: buscar_col(cab, spec, cb) for nom, spec, cb in specs_valor}
-        grupo = None  # se arrastra: la etiqueta solo está en la 1ª fila del grupo
+        grupo = None
         for r in range(hr + 1, hoja.nrows):
-            etiqueta = str(hoja.cell_value(r, col_grupo)).strip()
-            if etiqueta:
-                grupo = etiqueta
-            # Solo filas de DETALLE (con identificador de préstamo); así se
-            # ignoran las filas de subtotal y se evita el doble conteo.
+            et = str(hoja.cell_value(r, col_grupo)).strip()
+            if et:
+                grupo = et
             ref = str(hoja.cell_value(r, col_ref)).strip()
             if not ref or grupo is None:
                 continue
-            destino = acreedor_mef(grupo)
-            fila = agg.setdefault(destino, {nom: 0.0 for nom, *_ in CONCEPTOS})
+            fila = _fila_acreedor(acreedor_mef(grupo))
             for nom, ci in cols_val.items():
-                fila[nom] += num(hoja.cell_value(r, ci))
+                if ci is not None:
+                    fila[nom] += num(hoja.cell_value(r, ci))
 
-    # Desembolsos -> Giros del Exterior (un solo rubro: Valor USD)
     acumula(DESEMBOLSO,
             [(n, BCE_DEL_VALOR, cb) for n, _, h, cb in CONCEPTOS if h == DESEMBOLSO],
             SPEC_REF_DEL, HOJA_REF[DESEMBOLSO])
-    # Pagos -> Giros al Exterior (capital, interés, comisión, condonados, mora)
     acumula(PAGO,
             [(n, BCE_AL_COLS[n], cb) for n, _, h, cb in CONCEPTOS if h == PAGO],
             SPEC_REF_AL, HOJA_REF[PAGO])
