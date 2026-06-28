@@ -310,18 +310,89 @@ def clasificar_observacion(texto):
             'Verificar documentación con el BCE y coordinar corrección.')
 
 
-def diagnostico(ruta_mef):
-    """Lista de carteras del MEF que traen una Observación, ya clasificadas.
-    Cada item: {acreedor, tipo, observacion, por_que, accion, rubros{concepto:valor}}."""
-    items = []
+MESES_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
+            "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
+
+
+def detectar_periodo(ruta_mef=None, ruta_bce=None):
+    """Detecta el periodo del reporte sin que el usuario lo elija.
+    Devuelve {periodo:'AAAA-MM', mes:'Marzo', anio:'2026', texto:'Marzo 2026'}."""
+    def desde_mef(ruta):
+        try:
+            hoja = abrir_hoja(xlrd.open_workbook(ruta), "Resumen")
+        except Exception:
+            return None
+        for r in range(min(hoja.nrows, 6)):
+            for c in range(min(hoja.ncols, 4)):
+                t = str(hoja.cell_value(r, c)).lower()
+                ma = re.search(r"(20\d{2})", t)
+                for i, mes in enumerate(MESES_ES, 1):
+                    if mes in t and ma:
+                        return (ma.group(1), i)
+        return None
+
+    def desde_bce(ruta):
+        try:
+            wb = xlrd.open_workbook(ruta)
+        except Exception:
+            return None
+        for hoja in wb.sheets():
+            for r in range(min(hoja.nrows, 6)):
+                for c in range(min(hoja.ncols, 6)):
+                    t = str(hoja.cell_value(r, c))
+                    m = re.search(r"(\d{2})/(20\d{2})", t)  # "Desde: 02/03/2026"
+                    m2 = re.search(r"\d{2}/(\d{2})/(20\d{2})", t)
+                    if m2:
+                        return (m2.group(2), int(m2.group(1)))
+        return None
+
+    res = (desde_mef(ruta_mef) if ruta_mef else None) or \
+          (desde_bce(ruta_bce) if ruta_bce else None)
+    if not res:
+        ahora = datetime.now()
+        res = (str(ahora.year), ahora.month)
+    anio, mnum = res
+    return {"periodo": f"{anio}-{mnum:02d}", "mes": MESES_ES[mnum - 1].capitalize(),
+            "anio": anio, "texto": f"{MESES_ES[mnum - 1].capitalize()} {anio}"}
+
+
+def diagnostico(ruta_mef, filas=None):
+    """Diagnóstico SOLO de las carteras que NO concilian.
+    Para cada cartera con diferencia, busca la Observación del MEF que la
+    explica y la clasifica. Si filas es None, se basa solo en observaciones.
+    Item: {acreedor, tipo, observacion, por_que, accion, rubros{concepto:dif}}."""
+    # Mapa de observaciones del MEF, resuelto al nivel de conciliación
+    obs_por_cartera = {}
     for fila in leer_mef_detalle(ruta_mef):
         obs = fila["observacion"].strip()
         if not obs:
             continue
+        dest = acreedor_mef(fila["organismo"])
+        obs_por_cartera.setdefault(dest, []).append((fila["organismo"], obs))
+
+    if filas is None:
+        # Modo simple: todas las observaciones (compatibilidad)
+        items = []
+        for cart, lst in obs_por_cartera.items():
+            for _org, obs in lst:
+                tipo, por_que, accion = clasificar_observacion(obs)
+                items.append({"acreedor": cart, "tipo": tipo, "observacion": obs,
+                              "por_que": por_que, "accion": accion, "rubros": {}})
+        return items
+
+    # Diferencias reales por cartera (rubro -> |diferencia|)
+    difs = OrderedDict()
+    for ac, concepto, _vm, _vb, dif, estado in filas:
+        if estado == "DIFERENCIA":
+            difs.setdefault(ac, {})[concepto] = round(abs(dif), 2)
+
+    items = []
+    for cart, rubros in difs.items():
+        obs_list = obs_por_cartera.get(cart, [])
+        obs = "; ".join(f"{o}: {t}" for o, t in obs_list) if obs_list else ""
         tipo, por_que, accion = clasificar_observacion(obs)
-        rubros = {k: round(v, 2) for k, v in fila["valores"].items() if v}
         items.append({
-            "acreedor": fila["organismo"], "tipo": tipo, "observacion": obs,
+            "acreedor": cart, "tipo": tipo, "observacion": obs,
             "por_que": por_que, "accion": accion, "rubros": rubros,
         })
     return items
@@ -419,6 +490,53 @@ def leer_pago_directo(ruta):
         "valor": valor, "moneda": moneda, "nota": nota, "detalle": detalle,
         "concepto": "Desembolsos",
     }
+
+
+def exportar_bce_ajustado(ruta_bce, ajustes, ruta_salida):
+    """Copia la hoja 'Giros del Exterior' del reporte BCE y AGREGA al final las
+    filas de pago directo (con su NOTA), resaltadas, para que el ajuste quede
+    reflejado en el archivo. ajustes=[{acreedor,referencia,valor,nota,...}].
+    Devuelve True si se generó el .xlsx."""
+    if not OPENPYXL:
+        return False
+    libro = xlrd.open_workbook(ruta_bce)
+    hoja = abrir_hoja(libro, DESEMBOLSO)  # Giros del Exterior
+    hr = fila_encabezado(hoja, "Agrupaci")
+    cab = _celdas_encabezado(hoja, hr)
+    c_fecha = buscar_col(cab, (["fecha"], []), 1)
+    c_sig = buscar_col(cab, SPEC_REF_DEL, 2)
+    c_ref = buscar_col(cab, (["referencia"], []), 3)
+    c_grp = buscar_col(cab, SPEC_GRUPO, 4)
+    c_prest = buscar_col(cab, (["prestamista"], []), 5)
+    c_val = buscar_col(cab, BCE_DEL_VALOR, 10)
+    c_nota = buscar_col(cab, (["nota"], []), max(hoja.ncols - 1, 6))
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Giros del Exterior"
+    amarillo = PatternFill("solid", fgColor="FFF2CC")
+    negrita = Font(bold=True)
+    # Copiar todo el contenido original
+    for r in range(hoja.nrows):
+        ws.append([hoja.cell_value(r, c) for c in range(hoja.ncols)])
+    # Marca de separación + filas de pago directo
+    sep = ws.max_row + 2
+    ws.cell(sep, 1, "AJUSTES POR PAGO DIRECTO (agregados en conciliación)").font = negrita
+    fecha = datetime.now().strftime("%d/%m/%Y")
+    for aj in ajustes:
+        ws.append([])
+        r = ws.max_row
+        ws.cell(r, c_fecha + 1, fecha)
+        ws.cell(r, c_sig + 1, aj.get("referencia", ""))
+        ws.cell(r, c_ref + 1, aj.get("referencia", ""))
+        ws.cell(r, c_grp + 1, aj.get("acreedor", ""))
+        ws.cell(r, c_prest + 1, aj.get("prestamista", aj.get("acreedor", "")))
+        ws.cell(r, c_val + 1, aj.get("valor", 0)).number_format = "#,##0.00"
+        ws.cell(r, c_nota + 1, aj.get("nota", ""))
+        for c in range(1, hoja.ncols + 1):
+            ws.cell(r, c).fill = amarillo
+    wb.save(ruta_salida)
+    return True
 
 
 # -------------------------------------------------------------------------
