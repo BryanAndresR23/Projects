@@ -189,6 +189,13 @@ def api_conciliar():
             diferencias += 1
             total_dif += abs(dif)
 
+    # Totales por cartera (MEF vs BCE) y diagnóstico de observaciones del MEF
+    totales = [{"acreedor": ac, **t} for ac, t in C.totales_por_cartera(filas).items()]
+    try:
+        diag = C.diagnostico(ruta_mef)
+    except Exception:
+        diag = []
+
     return jsonify({
         "ok": True, "periodo": periodo, "fecha": ahora,
         "registros": registros, "total": len(registros),
@@ -197,7 +204,7 @@ def api_conciliar():
         "ruta_bce": ruta_bce, "ruta_mef": ruta_mef,
         "archivo_bce": os.path.basename(ruta_bce),
         "archivo_mef": os.path.basename(ruta_mef),
-        "avisos": avisos,
+        "avisos": avisos, "totales": totales, "diagnostico": diag,
     })
 
 
@@ -336,6 +343,26 @@ PANEL_HTML = r"""<!doctype html>
   .hist a:hover{background:#f3f7ff}
   .alert{border-radius:10px;padding:12px 14px;font-size:13px;margin-bottom:16px}
   #msg{font-size:13px;margin-top:6px}
+  tr.tot td{background:#eaf1fb;font-weight:800;color:var(--navy);border-top:2px solid #cdd9ef}
+  .diaghead{background:var(--navy);color:#fff;border-radius:12px;padding:14px 18px;margin-bottom:16px;font-weight:700}
+  .diaghead small{display:block;color:#9fb3d4;font-weight:400;font-size:12px;margin-top:2px}
+  .dcard{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:14px}
+  .dcard.pd{background:#fffbeb;border-color:#fde68a}
+  .dcard.dc{background:#eff6ff;border-color:#bfdbfe}
+  .dcard .dh{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+  .dcard .dname{font-weight:800;color:var(--navy);font-size:15px}
+  .dtag{padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;border:1px solid var(--line)}
+  .dtag.pd{background:#fef3c7;color:#92400e;border-color:#fcd34d}
+  .dtag.dc{background:#dbeafe;color:#1e40af;border-color:#bfdbfe}
+  .dtag.ot{background:#f1f5f9;color:#475569}
+  .dcard .dmonto{margin-left:auto;color:var(--bad);font-weight:800;font-size:13px}
+  .dobs{background:#fff;border:1px solid var(--line);border-radius:8px;padding:9px 12px;font-size:12.5px;margin-bottom:10px}
+  .dgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media(max-width:760px){.dgrid{grid-template-columns:1fr}}
+  .dbox{background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+  .dbox .bt{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px}
+  .dbox.why .bt{color:#b45309} .dbox.act .bt{color:var(--ok)}
+  .dbox .bd{font-size:12.5px;color:#334155}
 </style>
 </head>
 <body>
@@ -348,8 +375,9 @@ PANEL_HTML = r"""<!doctype html>
     <nav class="nav" id="nav">
       <div class="it act" data-v="cargar"><div class="num">1</div><div><div class="tt">Cargar Reportes</div><div class="ss">MEF + BCE</div></div></div>
       <div class="it" data-v="resultados"><div class="num">2</div><div><div class="tt">Resultados</div><div class="ss">Cruce automatico</div></div></div>
-      <div class="it" data-v="cert"><div class="num">3</div><div><div class="tt">Certificacion</div><div class="ss">Reporte oficial</div></div></div>
-      <div class="it" data-v="historial"><div class="num">4</div><div><div class="tt">Historial</div><div class="ss">Periodos anteriores</div></div></div>
+      <div class="it" data-v="ajustes"><div class="num">3</div><div><div class="tt">Ajustes</div><div class="ss">Pagos directos</div></div></div>
+      <div class="it" data-v="cert"><div class="num">4</div><div><div class="tt">Certificacion</div><div class="ss">Reporte oficial</div></div></div>
+      <div class="it" data-v="historial"><div class="num">5</div><div><div class="tt">Historial</div><div class="ss">Periodos anteriores</div></div></div>
     </nav>
     <div class="estado">
       <div class="h">Estado de carteras</div>
@@ -437,6 +465,13 @@ PANEL_HTML = r"""<!doctype html>
         </div>
       </section>
 
+      <section id="v-ajustes" class="hidden">
+        <h3 class="sec">&#9881;&#65039; Ajustes y Pagos Directos</h3>
+        <p class="sub">El sistema detecta las observaciones del MEF y explica cada diferencia o inconsistencia.</p>
+        <div class="diaghead" id="diagHead">Ejecuta una conciliacion para ver el diagnostico.</div>
+        <div id="diagList"></div>
+      </section>
+
       <section id="v-cert" class="hidden">
         <h3 class="sec">&#128220; Certificacion</h3>
         <p class="sub">Reporte oficial imprimible del periodo conciliado.</p>
@@ -454,7 +489,7 @@ PANEL_HTML = r"""<!doctype html>
 
 <script>
 const MESES=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
-let FILES={mef:null,bce:null}, DATA=[], PERIODO="", FILTRO="all", RESUMEN=null;
+let FILES={mef:null,bce:null}, DATA=[], PERIODO="", FILTRO="all", RESUMEN=null, TOTALES=[], DIAG=[];
 const fmt=n=>(n||0).toLocaleString("es-EC",{minimumFractionDigits:2,maximumFractionDigits:2});
 function msg(t,err){const m=document.getElementById("msg");m.textContent=t;m.style.color=err?"#dc2626":"#16a34a";}
 const valido=f=>f&&/\.(xls|xlsx)$/i.test(f.name);
@@ -484,10 +519,10 @@ async function ejecutar(){
   try{
     const j=await (await fetch("/api/conciliar",{method:"POST",body:fd})).json();
     if(!j.ok){msg(j.error||"Error",true);btn.disabled=false;return;}
-    DATA=j.registros;PERIODO=j.periodo;
+    DATA=j.registros;PERIODO=j.periodo;TOTALES=j.totales||[];DIAG=j.diagnostico||[];
     RESUMEN={total:j.total,con:j.conciliados,dif:j.diferencias,sum:j.total_diferencia,
              mes,anio,analista:document.getElementById("analista").value,fecha:j.fecha};
-    pintarResultados();pintarCert();cargarHistorial();
+    pintarResultados();pintarCert();pintarDiag();cargarHistorial();
     document.getElementById("periodoBadge").textContent=mes+" "+anio;
     document.getElementById("periodoBadge").className="badge "+(j.diferencias===0?"ok":"");
     document.getElementById("analistaTop").textContent=RESUMEN.analista;
@@ -525,9 +560,16 @@ function render(){
   if(FILTRO==="con")rows=DATA.filter(r=>r.estado==="CONCILIADO");
   const tb=document.getElementById("tbody");tb.innerHTML="";
   if(!rows.length){tb.innerHTML=`<tr><td colspan="6" class="muted" style="text-align:center;padding:24px">Sin filas para este filtro.</td></tr>`;return;}
+  const totMap={}; TOTALES.forEach(t=>totMap[t.acreedor]=t);
   let actual=null;
+  const cerrarTotal=ac=>{ const t=totMap[ac]; if(!t) return;
+    const tr=document.createElement("tr"); tr.className="tot";
+    tr.innerHTML=`<td></td><td>TOTAL ${ac}</td><td class="num">${fmt(t.mef)}</td>
+      <td class="num">${fmt(t.bce)}</td><td class="num">${fmt(t.dif)}</td>
+      <td><span class="pill ${t.estado==='DIFERENCIA'?'dif':'con'}">${t.estado}</span></td>`;
+    tb.appendChild(tr); };
   rows.forEach(r=>{
-    if(r.acreedor!==actual){actual=r.acreedor;
+    if(r.acreedor!==actual){ if(actual!==null) cerrarTotal(actual); actual=r.acreedor;
       const g=document.createElement("tr");g.className="grp";g.innerHTML=`<td colspan="6">${r.acreedor}</td>`;tb.appendChild(g);}
     const tr=document.createElement("tr");tr.className=r.estado==="DIFERENCIA"?"dif":"con";
     tr.innerHTML=`<td></td><td>${r.concepto}</td><td class="num">${fmt(r.mef)}</td>
@@ -535,6 +577,30 @@ function render(){
       <td><span class="pill ${r.estado==='DIFERENCIA'?'dif':'con'}">${r.estado}</span></td>`;
     tb.appendChild(tr);
   });
+  if(actual!==null) cerrarTotal(actual);
+}
+
+function pintarDiag(){
+  const head=document.getElementById("diagHead"), list=document.getElementById("diagList");
+  if(!DIAG.length){ head.innerHTML="No hay observaciones del MEF en este periodo."; list.innerHTML=""; return; }
+  const npd=DIAG.filter(d=>d.tipo==="Pago Directo").length;
+  head.innerHTML=`Diagnostico Automatico &ndash; Observaciones del MEF
+    <small>Detectadas ${DIAG.length} cartera(s) con observacion &middot; ${npd} pago(s) directo(s) &middot; fuente: columna Observaciones del Resumen MEF</small>`;
+  const cls=t=>t==="Pago Directo"?"pd":t==="Diferencial Cambiario"?"dc":"ot";
+  list.innerHTML=DIAG.map(d=>{
+    const c=cls(d.tipo);
+    const montos=Object.entries(d.rubros||{}).map(([k,v])=>`&Delta; ${k}: ${fmt(v)}`).join(" &middot; ");
+    const obs=d.observacion?`<div class="dobs">&#128221; <b>Observacion MEF:</b> ${d.observacion}</div>`:"";
+    return `<div class="dcard ${c}">
+      <div class="dh"><span class="dname">${d.acreedor}</span>
+        <span class="dtag ${c}">${d.tipo}</span>
+        <span class="dmonto">${montos}</span></div>
+      ${obs}
+      <div class="dgrid">
+        <div class="dbox why"><div class="bt">&#191;Por que existe?</div><div class="bd">${d.por_que}</div></div>
+        <div class="dbox act"><div class="bt">&#9989; Accion requerida</div><div class="bd">${d.accion}</div></div>
+      </div></div>`;
+  }).join("");
 }
 
 async function exportar(){
@@ -574,17 +640,20 @@ async function cargarHistorial(){
 }
 async function verHist(p){
   const j=await (await fetch("/api/periodo/"+encodeURIComponent(p))).json();
-  if(!j.ok)return;DATA=j.registros;PERIODO=p;
+  if(!j.ok)return;DATA=j.registros;PERIODO=p;DIAG=[];
+  // Recalcular totales por cartera desde los registros guardados
+  const tm={}; DATA.forEach(r=>{const t=tm[r.acreedor]||(tm[r.acreedor]={acreedor:r.acreedor,mef:0,bce:0});t.mef+=r.mef;t.bce+=r.bce;});
+  TOTALES=Object.values(tm).map(t=>{const d=Math.round((t.mef-t.bce)*100)/100||0;return {...t,mef:Math.round(t.mef*100)/100,bce:Math.round(t.bce*100)/100,dif:d,estado:Math.abs(d)<=0.5?"CONCILIADO":"DIFERENCIA"};});
   const dif=DATA.filter(r=>r.estado==="DIFERENCIA").length,con=DATA.length-dif;
   const sum=DATA.filter(r=>r.estado==="DIFERENCIA").reduce((a,r)=>a+Math.abs(r.diferencia),0);
   const part=p.split("-");
   RESUMEN={total:DATA.length,con,dif,sum,mes:MESES[parseInt(part[1])-1]||"",anio:part[0],analista:document.getElementById("analista").value};
-  pintarResultados();pintarCert();irA("resultados");
+  pintarResultados();pintarCert();pintarDiag();irA("resultados");
 }
 
 function irA(v){
   document.querySelectorAll(".nav .it").forEach(it=>it.classList.toggle("act",it.dataset.v===v));
-  ["cargar","resultados","cert","historial"].forEach(s=>document.getElementById("v-"+s).classList.toggle("hidden",s!==v));
+  ["cargar","resultados","ajustes","cert","historial"].forEach(s=>document.getElementById("v-"+s).classList.toggle("hidden",s!==v));
 }
 document.getElementById("nav").addEventListener("click",e=>{const it=e.target.closest(".it");if(it)irA(it.dataset.v);});
 cargarHistorial();

@@ -248,6 +248,85 @@ def leer_bce(ruta):
     return agg
 
 
+def leer_mef_detalle(ruta):
+    """Lista de filas del Resumen MEF con sus valores y la Observación.
+    Incluye TODAS las carteras (hijas y subtotales) para el diagnóstico."""
+    libro = xlrd.open_workbook(ruta)
+    hoja = abrir_hoja(libro, "Resumen")
+    hr = fila_encabezado(hoja, "Organismo")
+    cab = _celdas_encabezado(hoja, hr)
+    c_org = buscar_col(cab, (["organismo"], []), col("A"))
+    c_obs = buscar_col(cab, (["observ"], []), None)
+    cols = {nom: buscar_col(cab, MEF_COLS[nom], cm) for nom, cm, _, _ in CONCEPTOS}
+    filas = []
+    for r in range(hr + 1, hoja.nrows):
+        org = normaliza(hoja.cell_value(r, c_org))
+        if not org or org.startswith("TOTAL"):
+            continue
+        valores = {nom: num(hoja.cell_value(r, cols[nom])) for nom, *_ in CONCEPTOS}
+        obs = "" if c_obs is None else str(hoja.cell_value(r, c_obs)).strip()
+        filas.append({"organismo": org, "valores": valores, "observacion": obs})
+    return filas
+
+
+# -------------------------------------------------------------------------
+# TOTALES POR CARTERA  (MEF vs BCE)  —  para verificar el cuadre completo
+# -------------------------------------------------------------------------
+def totales_por_cartera(filas):
+    """Suma de todos los rubros por acreedor: {acreedor: {mef,bce,dif,estado}}."""
+    tot = OrderedDict()
+    for ac, _concepto, vm, vb, _dif, _estado in filas:
+        t = tot.setdefault(ac, {"mef": 0.0, "bce": 0.0})
+        t["mef"] += vm
+        t["bce"] += vb
+    for ac, t in tot.items():
+        t["mef"] = round(t["mef"], 2)
+        t["bce"] = round(t["bce"], 2)
+        t["dif"] = round(t["mef"] - t["bce"], 2) or 0.0
+        t["estado"] = "CONCILIADO" if abs(t["dif"]) <= TOLERANCIA else "DIFERENCIA"
+    return tot
+
+
+# -------------------------------------------------------------------------
+# DIAGNÓSTICO DE DIFERENCIAS  —  lee Observaciones del MEF y las clasifica
+# -------------------------------------------------------------------------
+def clasificar_observacion(texto):
+    """Devuelve (tipo, por_que, accion) según la observación del MEF."""
+    t = (texto or "").lower()
+    if "pago directo" in t or "forma directa" in t or "de forma directa" in t or "directo" in t:
+        return ("Pago Directo",
+                'El desembolso se realizó directamente al proveedor sin pasar por el '
+                'Banco Central, por lo que el BCE no lo registra.',
+                'Agregar fila en "Giros del Exterior" del BCE con el valor del pago '
+                'directo y adjuntar el respaldo (Quipux).')
+    if "cambiario" in t or "moneda original" in t:
+        return ("Diferencial Cambiario",
+                'La moneda original del préstamo difiere del USD, generando variaciones '
+                'por tipo de cambio.',
+                'Diferencia por conversión de moneda. Registrar como observación; '
+                'no requiere ajuste numérico.')
+    return ("Otro",
+            'Movimiento registrado en el MEF que requiere revisión con el BCE.',
+            'Verificar documentación con el BCE y coordinar corrección.')
+
+
+def diagnostico(ruta_mef):
+    """Lista de carteras del MEF que traen una Observación, ya clasificadas.
+    Cada item: {acreedor, tipo, observacion, por_que, accion, rubros{concepto:valor}}."""
+    items = []
+    for fila in leer_mef_detalle(ruta_mef):
+        obs = fila["observacion"].strip()
+        if not obs:
+            continue
+        tipo, por_que, accion = clasificar_observacion(obs)
+        rubros = {k: round(v, 2) for k, v in fila["valores"].items() if v}
+        items.append({
+            "acreedor": fila["organismo"], "tipo": tipo, "observacion": obs,
+            "por_que": por_que, "accion": accion, "rubros": rubros,
+        })
+    return items
+
+
 # -------------------------------------------------------------------------
 # CONCILIACIÓN
 # -------------------------------------------------------------------------
