@@ -147,30 +147,81 @@ def num(v) -> float:
         return 0.0
 
 
+# -------------------------------------------------------------------------
+# DETECCIÓN DE COLUMNAS POR TÍTULO (robusta: no depende de letras fijas)
+# -------------------------------------------------------------------------
+# Cada columna se ubica por su ENCABEZADO, no por su letra. Así, si el BCE o
+# el MEF agregan/mueven columnas, la conciliación sigue tomando el rubro
+# correcto. Si no se encuentra el título, se usa la letra fija como respaldo.
+#   spec = (incluye[], excluye[])  -> la celda debe contener todos los de
+#          'incluye' y ninguno de 'excluye' (comparación en minúsculas).
+MEF_COLS = {
+    "Desembolsos":          (["desembols"], []),
+    "Amortizaciones":       (["amortiz"], []),
+    "Intereses":            (["inter"], ["condon", "mora"]),
+    "Comisiones":           (["comis"], []),
+    "Intereses Condonados": (["condon"], []),
+    "Interés por Mora":     (["mora"], []),
+}
+BCE_AL_COLS = {
+    "Amortizaciones":       (["capital", "usd"], []),
+    "Intereses":            (["inter", "usd"], ["mora", "comis", "condon"]),
+    "Comisiones":           (["comis", "usd"], []),
+    "Intereses Condonados": (["condonados", "usd"], []),
+    "Interés por Mora":     (["mora", "usd"], []),
+}
+BCE_DEL_VALOR = (["valor", "usd"], [])          # Desembolsos: "Valor (USD)"
+SPEC_GRUPO    = (["agrupaci"], [])              # "Agrupación del/al Exterior"
+SPEC_REF_DEL  = (["sigade"], [])                # "No. SIGADE"
+SPEC_REF_AL   = (["referencia"], [])            # "No. Referencia Préstamo"
+
+
+def _celdas_encabezado(hoja, hr):
+    return [str(hoja.cell_value(hr, c)).lower() for c in range(hoja.ncols)]
+
+
+def buscar_col(cabeceras, spec, respaldo=None):
+    """Índice de la columna cuyo encabezado cumple spec; si no, 'respaldo'."""
+    incluye, excluye = spec
+    for i, txt in enumerate(cabeceras):
+        if all(k in txt for k in incluye) and not any(k in txt for k in excluye):
+            return i
+    return respaldo
+
+
 def leer_mef(ruta):
-    """{ organismo_normalizado: {concepto: valor} } desde la hoja Resumen."""
+    """{ organismo_normalizado: {concepto: valor} } desde la hoja Resumen.
+    Las columnas de cada rubro se localizan por su título."""
     libro = xlrd.open_workbook(ruta)
     hoja = abrir_hoja(libro, "Resumen")
     hr = fila_encabezado(hoja, "Organismo")
+    cab = _celdas_encabezado(hoja, hr)
+    c_org = buscar_col(cab, (["organismo"], []), col("A"))
+    # Columna de cada concepto por título (respaldo: letra fija de CONCEPTOS)
+    cols = {nom: buscar_col(cab, MEF_COLS[nom], cm) for nom, cm, _, _ in CONCEPTOS}
     datos = OrderedDict()
     for r in range(hr + 1, hoja.nrows):
-        org = normaliza(hoja.cell_value(r, col("A")))
+        org = normaliza(hoja.cell_value(r, c_org))
         if not org or org.startswith("TOTAL"):
             continue
-        datos[org] = {nom: num(hoja.cell_value(r, cm)) for nom, cm, _, _ in CONCEPTOS}
+        datos[org] = {nom: num(hoja.cell_value(r, cols[nom])) for nom, *_ in CONCEPTOS}
     return datos
 
 
 def leer_bce(ruta):
-    """{ organismo_MEF: {concepto: valor} } agregando las hojas de Giros."""
+    """{ organismo_MEF: {concepto: valor} } agregando las hojas de Giros.
+    Agrupación, identificador de detalle y cada rubro se ubican por título."""
     libro = xlrd.open_workbook(ruta)
     agg = OrderedDict()
 
-    def acumula(hoja_pat, conceptos):
+    def acumula(hoja_pat, specs_valor, spec_ref, respaldo_ref):
         hoja = abrir_hoja(libro, hoja_pat)
         hr = fila_encabezado(hoja, "Agrupaci")
-        col_grupo = HOJA_GRUPO[hoja_pat]
-        col_ref = HOJA_REF[hoja_pat]
+        cab = _celdas_encabezado(hoja, hr)
+        col_grupo = buscar_col(cab, SPEC_GRUPO, HOJA_GRUPO[hoja_pat])
+        col_ref = buscar_col(cab, spec_ref, respaldo_ref)
+        # {concepto: índice de columna} ubicadas por título
+        cols_val = {nom: buscar_col(cab, spec, cb) for nom, spec, cb in specs_valor}
         grupo = None  # se arrastra: la etiqueta solo está en la 1ª fila del grupo
         for r in range(hr + 1, hoja.nrows):
             etiqueta = str(hoja.cell_value(r, col_grupo)).strip()
@@ -183,12 +234,17 @@ def leer_bce(ruta):
                 continue
             destino = acreedor_mef(grupo)
             fila = agg.setdefault(destino, {nom: 0.0 for nom, *_ in CONCEPTOS})
-            for nom, cb in conceptos:
-                fila[nom] += num(hoja.cell_value(r, cb))
+            for nom, ci in cols_val.items():
+                fila[nom] += num(hoja.cell_value(r, ci))
 
-    # Desembolsos -> Giros del Exterior ; Pagos -> Giros al Exterior
-    acumula(DESEMBOLSO, [(n, cb) for n, _, h, cb in CONCEPTOS if h == DESEMBOLSO])
-    acumula(PAGO, [(n, cb) for n, _, h, cb in CONCEPTOS if h == PAGO])
+    # Desembolsos -> Giros del Exterior (un solo rubro: Valor USD)
+    acumula(DESEMBOLSO,
+            [(n, BCE_DEL_VALOR, cb) for n, _, h, cb in CONCEPTOS if h == DESEMBOLSO],
+            SPEC_REF_DEL, HOJA_REF[DESEMBOLSO])
+    # Pagos -> Giros al Exterior (capital, interés, comisión, condonados, mora)
+    acumula(PAGO,
+            [(n, BCE_AL_COLS[n], cb) for n, _, h, cb in CONCEPTOS if h == PAGO],
+            SPEC_REF_AL, HOJA_REF[PAGO])
     return agg
 
 
