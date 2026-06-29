@@ -615,7 +615,7 @@ function pintarMatriz(){
   h+=`</tr></tbody>`;document.getElementById("mtable").innerHTML=h;
   const dif=RES.diferencias;
   document.getElementById("stats").innerHTML=
-    `<div class="stat"><div class="n">${RES.total}</div><div class="l">Conceptos comparados</div></div>
+    `<div class="stat"><div class="n">${TOTALES.length} / ${RES.total}</div><div class="l">Carteras / rubros con movimiento</div></div>
      <div class="stat ok"><div class="n">${RES.conciliados}</div><div class="l">Conciliados</div></div>
      <div class="stat bad"><div class="n">${dif}</div><div class="l">Con diferencia</div></div>
      <div class="stat gold"><div class="n">${fmt(GTOT.mef)}</div><div class="l">Total general (USD)</div></div>`;
@@ -626,7 +626,10 @@ function pintarMatriz(){
 }
 function pintarAjustes(){
   const cont=document.getElementById("ajContenido");
-  if(RES&&RES.conciliado_total){cont.innerHTML=`<div class="note-ok">&#10004; No existen observaciones. El MEF remitio la informacion completamente conciliada; no se requieren ajustes.</div>`;return;}
+  if(RES&&RES.conciliado_total){
+    const dl=RES.bce_ajustado?`<div style="margin-top:16px"><button class="btn alt" onclick="window.location='/api/descargar_bce_ajustado?periodo=${encodeURIComponent(PERIODO)}'">&#11015; Descargar Reporte Conciliacion BCE (modificado y conciliado)</button></div>`:"";
+    cont.innerHTML=`<div class="note-ok">&#10004; Conciliacion completa. ${RES.bce_ajustado?"Se aplicaron ajustes; ya puede descargar el reporte BCE modificado.":"El MEF remitio la informacion completamente conciliada; no se requieren ajustes."}</div>`+dl;
+    return;}
   const cls=t=>t==="Pago Directo"?"pd":t==="Diferencial Cambiario"?"dc":"ot";
   let h=`<div class="card"><h3 class="sec" style="font-size:15px"><span class="bar"></span>Respaldo de pago directo (MEF)</h3>
     <p class="sub" style="margin:8px 0 14px">Cargue el respaldo que el MEF remite por Quipux. El valor se agrega en el mismo archivo del BCE y podra descargarlo modificado.</p>
@@ -647,31 +650,37 @@ function pintarAjustes(){
       const concepto=k.split("|")[1];
       PREST[k].forEach((p,idx)=>{
         const id=(ac+concepto+p.credito).replace(/[^A-Za-z0-9]/g,"");
-        loansHtml+=`<div class="loan"><div class="lh"><b>Credito ${p.credito}</b> &middot; ${concepto}
+        const refc=p.referencia||(ac+"-"+p.credito);
+        const notaDef=(concepto==="Desembolsos")
+          ? `Considerar desembolso realizado a traves de la modalidad "pago directo", credito ${refc}`
+          : `Ajuste ${concepto} - credito ${refc}`;
+        loansHtml+=`<div class="loan"><div class="lh"><b>${refc}</b> &middot; ${concepto}
           <span class="lm">MEF ${fmt(p.mef)} &nbsp;|&nbsp; BCE ${fmt(p.bce)} &nbsp;|&nbsp; falta <b style="color:var(--bad)">${fmt(p.dif)}</b></span></div>
           <div class="frow" style="margin-top:8px">
-            <div class="fld"><label>Valor a agregar (USD)</label><input type="number" id="lv${id}" value="${p.dif}" step="0.01" style="width:160px"></div>
-            <div class="fld" style="flex:1;min-width:220px"><label>Nota</label><input type="text" id="ln${id}" value="Ajuste credito ${p.credito} (${concepto})" style="width:100%"></div>
-            <button class="btn" onclick="aplicarCredito('${ac}','${concepto}','${p.credito}','${id}')">Agregar al BCE</button>
+            <div class="fld"><label>Referencia</label><input type="text" id="lr${id}" value="${refc}" style="width:160px"></div>
+            <div class="fld"><label>Valor a agregar (USD)</label><input type="number" id="lv${id}" value="${p.dif}" step="0.01" style="width:150px"></div>
+            <div class="fld" style="flex:1;min-width:220px"><label>Nota / Observacion</label><input type="text" id="ln${id}" value="${notaDef.replace(/"/g,'&quot;')}" style="width:100%"></div>
+            <button class="btn" onclick="aplicarCredito('${ac}','${concepto}','${id}')">Agregar al BCE</button>
           </div></div>`;
       });
     });
     if(!loansHtml) loansHtml=`<div class="dobs muted">No pude desglosar el credito (revise el detalle del MEF/BCE).</div>`;
     return `<div class="dcard ${c}"><div class="dh"><span class="dname">${CARTERA_TXT[ac]||ac}</span><span class="dtag ${c}">${tipo}</span></div>${obs}${loansHtml}</div>`;
   }).join("");
-  cont.innerHTML=h;if(RES&&RES.bce_ajustado)mostrarDescargaBce();
+  h+=`<div class="note-warn" style="margin-top:6px">La descarga del Reporte BCE modificado se habilita cuando TODAS las carteras esten conciliadas.</div>`;
+  cont.innerHTML=h;
 }
-async function aplicarCredito(acreedor,concepto,credito,id){
+async function aplicarCredito(acreedor,concepto,id){
   const valor=parseFloat(document.getElementById("lv"+id).value)||0;
   const nota=document.getElementById("ln"+id).value.trim();
+  const referencia=document.getElementById("lr"+id).value.trim();
   if(!valor){alert("Ingrese el valor a agregar.");return;}
   const j=await (await fetch("/api/aplicar_pago_directo",{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({periodo:PERIODO,acreedor,concepto,valor,nota,referencia:credito})})).json();
+    body:JSON.stringify({periodo:PERIODO,acreedor,concepto,valor,nota,referencia})})).json();
   if(!j.ok){alert(j.error||"Error");return;}
   const mod=j.archivo_modificado;
-  aplicarResultado({...j,info_periodo:INFO});mostrarDescargaBce();
-  alert((mod?"✓ Agregado al archivo del BCE":"⚠ Registrado, pero el archivo no se modifico: "+(j.archivo_motivo||""))
-    +"\nCredito "+credito+" ("+concepto+"): "+fmt(valor));
+  aplicarResultado({...j,info_periodo:INFO});
+  alert((mod?"✓ Agregado al reporte del BCE ("+referencia+")":"⚠ Registrado, pero el archivo no se modifico: "+(j.archivo_motivo||"")));
 }
 function onDropPd(e){e.preventDefault();e.currentTarget.classList.remove("over");if(e.dataTransfer.files.length)subirPd(e.dataTransfer.files);}
 async function subirPd(files){
@@ -778,11 +787,14 @@ def logo():
     """Sirve el logo OFICIAL del BCE si el usuario deja un archivo
     'logo_bce.(png|jpg|svg)' en la carpeta de la app; si no, 404 y la
     interfaz usa el emblema SVG por defecto."""
-    for ext, mime in (("png", "image/png"), ("jpg", "image/jpeg"),
-                      ("jpeg", "image/jpeg"), ("svg", "image/svg+xml")):
-        ruta = os.path.join(BASE_DIR, f"logo_bce.{ext}")
-        if os.path.exists(ruta):
-            return send_file(ruta, mimetype=mime)
+    import glob
+    mimes = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+             "gif": "image/gif", "svg": "image/svg+xml", "webp": "image/webp"}
+    # Acepta logo_bce.png, y también nombres con doble extensión (logo_bce.png.png)
+    for ruta in sorted(glob.glob(os.path.join(BASE_DIR, "logo_bce*"))):
+        ext = ruta.rsplit(".", 1)[-1].lower()
+        if ext in mimes:
+            return send_file(ruta, mimetype=mimes[ext])
     from flask import abort
     abort(404)
 

@@ -621,13 +621,16 @@ def diagnostico_prestamos(ruta_mef, ruta_bce, pares):
         if c_val_m is None:
             continue
         mef = {}
+        refs = {}   # numero de credito -> referencia completa (para mostrar)
         for r in range(hrm + 1, hoja_mef.nrows):
             ref = str(hoja_mef.cell_value(r, c_ref_m)).strip()
             if not ref:
                 continue
+            k = _numkey(ref)
+            refs.setdefault(k, ref)
             v = num(hoja_mef.cell_value(r, c_val_m))
             if v:
-                mef[_numkey(ref)] = mef.get(_numkey(ref), 0.0) + v
+                mef[k] = mef.get(k, 0.0) + v
         # BCE: hoja y columna según concepto
         es_des = concepto == "Desembolsos"
         hoja_bce = abrir_hoja(lb, DESEMBOLSO if es_des else PAGO)
@@ -648,81 +651,195 @@ def diagnostico_prestamos(ruta_mef, ruta_bce, pares):
                 continue
             if acreedor_mef(grupo) != cartera:
                 continue
+            k = _numkey(ref)
+            refs.setdefault(k, ref)
             v = num(hoja_bce.cell_value(r, c_val_b))
             if v:
-                bce[_numkey(ref)] = bce.get(_numkey(ref), 0.0) + v
+                bce[k] = bce.get(k, 0.0) + v
         items = []
         for k in sorted(set(mef) | set(bce)):
             m = round(mef.get(k, 0.0), 2)
             b = round(bce.get(k, 0.0), 2)
             if abs(m - b) > 0.01:
-                items.append({"credito": k, "mef": m, "bce": b,
-                              "dif": round(m - b, 2)})
+                # Referencia completa para mostrar (con prefijo de la cartera)
+                raw = refs.get(k, k)
+                ref_full = raw if cartera.upper() in raw.upper() else f"{cartera}-{raw}"
+                items.append({"credito": k, "referencia": ref_full,
+                              "mef": m, "bce": b, "dif": round(m - b, 2)})
         if items:
             salida[f"{cartera}|{concepto}"] = items
     return salida
 
 
 def modificar_bce_xls(ruta_bce, ajustes):
-    """Agrega filas de ajuste DENTRO del MISMO archivo .xls del BCE (lo
-    sobrescribe), resaltadas en amarillo, en la hoja que corresponde al rubro:
-    'Giros del Exterior' para Desembolsos y 'Giros al Exterior' para los demás
-    (capital/interés/comisión/condonados/mora). Cada ajuste:
-    {acreedor, concepto, referencia, valor, nota}.
-    Requiere xlutils + xlwt. Devuelve True si modificó el archivo."""
+    """Inserta las filas de ajuste EN EL LUGAR correcto del MISMO archivo .xls
+    del BCE: dentro del grupo de la cartera (antes de su subtotal), recalcula
+    los subtotales del grupo y el total general, y resalta la fila en amarillo.
+    Desembolsos -> 'Giros del Exterior'; demás rubros -> 'Giros al Exterior'.
+    Cada ajuste: {acreedor, concepto, referencia, valor, nota, prestamista}.
+    Requiere xlwt. Devuelve True si modificó el archivo."""
     try:
-        from xlutils.copy import copy as xl_copy
         import xlwt
     except Exception:
         return False
-    try:
-        rb = xlrd.open_workbook(ruta_bce, formatting_info=True)
-    except Exception:
-        rb = xlrd.open_workbook(ruta_bce)
+    rb = xlrd.open_workbook(ruta_bce)
 
-    def idx_hoja(kind):
-        for i, sh in enumerate(rb.sheets()):
-            n = sh.name.lower()
-            if kind == "del" and " del" in n:
-                return i, sh
-            if kind == "al" and " al" in n:
-                return i, sh
-        return None, None
-
-    wb = xl_copy(rb)
-    estilo = xlwt.easyxf("pattern: pattern solid, fore_colour light_yellow;")
-    fecha = datetime.now().strftime("%d/%m/%Y")
-    # fila de escritura por hoja (se va incrementando)
-    filaw = {}
-    algo = False
+    # Ajustes agrupados por hoja destino
+    by_kind = {}
     for aj in ajustes:
-        concepto = aj.get("concepto", "Desembolsos")
-        es_des = concepto == "Desembolsos"
-        idx, hoja = idx_hoja("del" if es_des else "al")
-        if idx is None:
-            continue
-        hr = fila_encabezado(hoja, "Agrupaci")
-        cab = _celdas_encabezado(hoja, hr)
-        c_fecha = buscar_col(cab, (["fecha"], []), 1)
-        c_ref = buscar_col(cab, (["referencia"], []), 3 if es_des else 7)
-        c_grp = buscar_col(cab, SPEC_GRUPO, 4 if es_des else 8)
-        c_prest = buscar_col(cab, (["prestamista"], []), 5 if es_des else 9)
-        spec_val = BCE_DEL_VALOR if es_des else BCE_AL_COLS.get(concepto, BCE_DEL_VALOR)
-        c_val = buscar_col(cab, spec_val, 10 if es_des else 20)
-        c_nota = buscar_col(cab, (["nota"], []), max(hoja.ncols - 1, 6))
-        ws = wb.get_sheet(idx)
-        r = filaw.get(idx, hoja.nrows)
-        ws.write(r, c_fecha, fecha, estilo)
-        ws.write(r, c_ref, aj.get("referencia", ""), estilo)
-        ws.write(r, c_grp, aj.get("acreedor", ""), estilo)
-        ws.write(r, c_prest, aj.get("prestamista", aj.get("acreedor", "")), estilo)
-        ws.write(r, c_val, float(aj.get("valor", 0)), estilo)
-        ws.write(r, c_nota, aj.get("nota", ""), estilo)
-        filaw[idx] = r + 1
-        algo = True
+        kind = "del" if aj.get("concepto", "Desembolsos") == "Desembolsos" else "al"
+        by_kind.setdefault(kind, []).append(aj)
+
+    fecha = datetime.now().strftime("%d/%m/%Y")
+    out = xlwt.Workbook(encoding="utf-8")
+    algo = False
+
+    for sh in rb.sheets():
+        nl = sh.name.lower()
+        kind = "del" if " del" in nl else ("al" if " al" in nl else None)
+        rows = [[sh.cell_value(r, c) for c in range(sh.ncols)] for r in range(sh.nrows)]
+        insertadas = set()
+
+        if kind and by_kind.get(kind):
+            hr = fila_encabezado(sh, "Agrupaci")
+            cab = _celdas_encabezado(sh, hr)
+            es_des = kind == "del"
+            c_fecha = buscar_col(cab, (["fecha"], []), 1)
+            c_ref = buscar_col(cab, (["referencia"], []), 3 if es_des else 7)
+            c_grp = buscar_col(cab, SPEC_GRUPO, 4 if es_des else 8)
+            c_prest = buscar_col(cab, (["prestamista"], []), 5 if es_des else 9)
+            c_tot = buscar_col(cab, (["total", "usd"], []), None)
+            c_nota = buscar_col(cab, (["nota"], []), sh.ncols - 1)
+
+            def es_subtotal(fila):
+                t = " ".join(str(fila[c]) for c in range(min(3, len(fila)))).upper()
+                if "TOTAL" in t:
+                    return True
+                # subtotal de prestamista: sin referencia pero con algún valor
+                ref = str(fila[c_ref]).strip() if c_ref < len(fila) else ""
+                tienev = any(isinstance(fila[c], (int, float)) and fila[c] for c in range(len(fila)))
+                return (not ref) and tienev
+
+            def fila_total_general():
+                for i in range(len(rows) - 1, hr, -1):
+                    cels = [str(rows[i][c]).strip().upper() for c in range(min(3, len(rows[i])))]
+                    if "TOTAL" in cels:  # el gran total es la última fila 'TOTAL'
+                        return i
+                return len(rows)
+
+            def nueva_fila(aj, c_val, val):
+                f = ["" for _ in range(sh.ncols)]
+                if c_fecha is not None and c_fecha < sh.ncols: f[c_fecha] = fecha
+                if c_ref is not None: f[c_ref] = aj.get("referencia", "")
+                if c_grp is not None: f[c_grp] = aj.get("acreedor", "")
+                if c_prest is not None: f[c_prest] = aj.get("prestamista", aj.get("acreedor", ""))
+                if c_val is not None: f[c_val] = val
+                if c_tot is not None: f[c_tot] = val
+                if c_nota is not None and c_nota < sh.ncols: f[c_nota] = aj.get("nota", "")
+                return f
+
+            def bump_total_general(c_val, val):
+                gi = fila_total_general()
+                if gi < len(rows):
+                    for cc in {c_val, c_tot}:
+                        if cc is not None and cc < len(rows[gi]) and isinstance(rows[gi][cc], (int, float)):
+                            rows[gi][cc] = round(rows[gi][cc] + val, 2)
+
+            for aj in by_kind[kind]:
+                concepto = aj.get("concepto", "Desembolsos")
+                spec_val = BCE_DEL_VALOR if es_des else BCE_AL_COLS.get(concepto, BCE_DEL_VALOR)
+                c_val = buscar_col(cab, spec_val, 10 if es_des else 20)
+                val = float(aj.get("valor", 0))
+                # 1) localizar 'TOTAL <grupo>' de la cartera
+                grp_total = None
+                for i in range(hr + 1, len(rows)):
+                    cels = [str(rows[i][c]) for c in range(min(3, len(rows[i])))]
+                    t0 = " ".join(cels).upper().strip()
+                    if t0.startswith("TOTAL ") and len(t0) > 6:
+                        resto = t0[6:].strip(" -:")
+                        if resto and acreedor_mef(resto) == aj.get("acreedor"):
+                            grp_total = i
+                            break
+                if grp_total is not None:
+                    # Insertar antes del bloque de subtotales del grupo
+                    ins = grp_total
+                    while ins - 1 > hr and es_subtotal(rows[ins - 1]):
+                        ins -= 1
+                    bump = list(range(ins, grp_total + 1))
+                    rows.insert(ins, nueva_fila(aj, c_val, val))
+                    insertadas = {x + 1 if x >= ins else x for x in insertadas}
+                    insertadas.add(ins)
+                    for b in [x + 1 for x in bump]:
+                        for cc in {c_val, c_tot}:
+                            if cc is not None and cc < len(rows[b]) and isinstance(rows[b][cc], (int, float)):
+                                rows[b][cc] = round(rows[b][cc] + val, 2)
+                    bump_total_general(c_val, val)
+                else:
+                    # No existe el grupo: crear bloque (detalle + subtotal) ANTES del total general
+                    gi = fila_total_general()
+                    det = nueva_fila(aj, c_val, val)
+                    sub = ["" for _ in range(sh.ncols)]
+                    sub[1 if sh.ncols > 1 else 0] = "TOTAL " + aj.get("prestamista", aj.get("acreedor", ""))
+                    if c_val is not None: sub[c_val] = val
+                    if c_tot is not None: sub[c_tot] = val
+                    rows.insert(gi, sub)
+                    rows.insert(gi, det)
+                    insertadas = {x + 2 if x >= gi else x for x in insertadas}
+                    insertadas.add(gi)
+            # Recalcular el TOTAL GENERAL = suma de los subtotales 'TOTAL <grupo>'
+            grupos = []
+            gi_final = None
+            for i in range(hr + 1, len(rows)):
+                cels = [str(rows[i][c]) for c in range(min(3, len(rows[i])))]
+                t0 = " ".join(cels).upper().strip()
+                if t0 == "TOTAL":
+                    gi_final = i
+                elif t0.startswith("TOTAL ") and len(t0) > 6:
+                    grupos.append(i)
+            if gi_final is not None and grupos:
+                for c in range(sh.ncols):
+                    vals = [rows[g][c] for g in grupos
+                            if c < len(rows[g]) and isinstance(rows[g][c], (int, float))
+                            and not isinstance(rows[g][c], bool)]
+                    if vals and c < len(rows[gi_final]) and isinstance(rows[gi_final][c], (int, float)):
+                        rows[gi_final][c] = round(sum(vals), 2)
+            algo = True
+
+        # --- escribir la hoja con formato institucional ---
+        ws = out.add_sheet(sh.name[:31])
+        st_hdr = xlwt.easyxf("pattern: pattern solid, fore_colour gray50; "
+                             "font: bold on, colour white; align: wrap on, horiz center, vert center; "
+                             "borders: left thin, right thin, top thin, bottom thin")
+        st_tot = xlwt.easyxf("pattern: pattern solid, fore_colour gray25; font: bold on")
+        st_tot_n = xlwt.easyxf("pattern: pattern solid, fore_colour gray25; font: bold on",
+                               num_format_str="#,##0.00")
+        st_ins = xlwt.easyxf("pattern: pattern solid, fore_colour light_yellow")
+        st_ins_n = xlwt.easyxf("pattern: pattern solid, fore_colour light_yellow",
+                               num_format_str="#,##0.00")
+        st_num = xlwt.easyxf(num_format_str="#,##0.00")
+        st_def = xlwt.easyxf("")
+        for ri, fila in enumerate(rows):
+            es_hdr = (kind is not None and ri == fila_encabezado(sh, "Agrupaci")) if kind else False
+            t0 = " ".join(str(fila[c]) for c in range(min(3, len(fila)))).upper()
+            es_tot = "TOTAL" in t0
+            es_ins = ri in insertadas
+            for ci, val in enumerate(fila):
+                num_cell = isinstance(val, (int, float)) and not isinstance(val, bool)
+                if es_hdr:
+                    ws.write(ri, ci, val, st_hdr)
+                elif es_ins:
+                    ws.write(ri, ci, val, st_ins_n if num_cell else st_ins)
+                elif es_tot:
+                    ws.write(ri, ci, val, st_tot_n if num_cell else st_tot)
+                else:
+                    ws.write(ri, ci, val, st_num if num_cell else st_def)
+        # anchos aproximados
+        for ci in range(rb.sheet_by_index(0).ncols if rb.nsheets else 0):
+            pass
+
     if not algo:
         return False
-    wb.save(ruta_bce)
+    out.save(ruta_bce)
     return True
 
 
