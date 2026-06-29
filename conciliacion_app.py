@@ -660,6 +660,14 @@ function pintarQuipux(){
       <div class="fld"><label>Fecha Oficio MEF</label><input type="text" id="qFechaMef" value="" style="width:170px"></div></div>
     <div class="frow" style="margin-top:12px"><div class="fld" style="flex:1;min-width:240px"><label>Destinatario</label><input type="text" id="qDest" value="Ana Maria Vallejo Cabezas - Directora Nacional de Seguimiento" style="width:100%"></div>
       <div class="fld" style="flex:1;min-width:240px"><label>Firmante (BCE)</label><input type="text" id="qFirma" value="Mgs. Luis Santiago Vargas Bautista - Subgerente de Servicios Financieros Internacionales" style="width:100%"></div></div>
+    <div class="fld" style="margin-top:12px"><label>Copia (una persona por linea: Nombre - Cargo)</label>
+      <textarea id="qCopia" style="height:150px">Miguel Rodrigo Hernandez Cobos - Subsecretario de Financiamiento Publico y Analisis de Riesgos
+Katherine de los Angeles Castellanos Cevallos - Analista 2 de Negociacion y Financiamiento Publico
+Edith Vinueza Herrera - Analista 2 de Seguimiento y Evaluacion del Financiamiento Publico
+Yessenia Centeno Masache - Especialista de Financiamiento Publico y Analisis de Riesgos
+Jose Patricio Egas Ponce - Analista 1 de Seguimiento y Evaluacion del Financiamiento Publico
+Rodolfo Ehmig Santillan - Analista 2 de la Caja Fiscal
+Diana Carolina Valdivieso Velasco - Especialista de Sistemas de Pago 2</textarea></div>
     <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap"><button class="btn" onclick="generarQuipux()">Generar oficio</button>
       <button class="btn gh" onclick="copiarQuipux()">Copiar</button><button class="btn gh" onclick="descargarQuipux()">Descargar .txt</button></div>
     <textarea id="qText" style="margin-top:14px" placeholder="Pulse 'Generar oficio'."></textarea></div>`;
@@ -674,6 +682,9 @@ function generarQuipux(){if(!(RES&&RES.conciliado_total)){alert("La conciliacion
   const present=new Set(DATA.map(r=>r.acreedor));const orden=ORDEN_QUIPUX.concat([...present].filter(a=>!ORDEN_QUIPUX.includes(a)));
   const lineas=orden.filter(c=>present.has(c)||["AIIB","GPS"].includes(c)).map(lineaCartera);
   const hoy=new Date().toLocaleDateString("es-EC",{day:"numeric",month:"long",year:"numeric"});const fMef=qv("qFechaMef");
+  const copiaRaw=(document.getElementById("qCopia")?document.getElementById("qCopia").value:"").split("\n").map(x=>x.trim()).filter(Boolean);
+  const copia=copiaRaw.length?"\n\nCopia:\n"+copiaRaw.map(l=>{const p=l.split(" - ");
+    return p.length>1?`Senor(a)\n${p[0].trim()}\n${p.slice(1).join(" - ").trim()}\nMINISTERIO DE ECONOMIA Y FINANZAS\n`:l;}).join("\n"):"";
   const txt=`Oficio Nro. ${qv("qOfBce")}
 Quito, D.M., ${hoy}
 
@@ -699,7 +710,7 @@ Con sentimientos de distinguida consideracion.
 Atentamente,
 
 Documento firmado electronicamente
-${qv("qFirma")}`;
+${qv("qFirma")}${copia}`;
   document.getElementById("qText").value=txt;}
 function copiarQuipux(){const t=document.getElementById("qText");if(!t.value){alert("Genere el oficio primero.");return;}t.select();document.execCommand("copy");alert("Texto copiado.");}
 function descargarQuipux(){const t=document.getElementById("qText").value;if(!t){alert("Genere el oficio primero.");return;}
