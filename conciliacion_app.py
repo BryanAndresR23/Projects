@@ -267,20 +267,30 @@ def _resultado_periodo(periodo):
     conciliado_total = diferencias == 0 and len(rows) > 0
     # Diagnóstico SOLO de lo que no concilia
     diag = []
-    mef_path = (PERIODO_FILES.get(periodo) or {}).get("mef")
+    prestamos = {}
+    info = PERIODO_FILES.get(periodo) or {}
+    mef_path = info.get("mef")
+    bce_path = info.get("bce")
+    pares = [(r["acreedor"], r["concepto"]) for r in rows if r["estado"] == "DIFERENCIA"]
     if mef_path and os.path.exists(mef_path):
         try:
             diag = C.diagnostico(mef_path, filas)
         except Exception:
             diag = []
-    bce_aj = bool((PERIODO_FILES.get(periodo) or {}).get("ajustes"))
+        # Diagnóstico por préstamo: qué crédito exacto no cuadra
+        if pares and bce_path and os.path.exists(bce_path):
+            try:
+                prestamos = C.diagnostico_prestamos(mef_path, bce_path, pares)
+            except Exception:
+                prestamos = {}
+    bce_aj = bool(info.get("ajustes"))
     return {
         "ok": True, "periodo": periodo, "registros": rows,
         "total": len(rows), "conciliados": conciliados, "diferencias": diferencias,
         "total_diferencia": total_dif, "totales": totales,
         "gran_total": {"mef": g_mef, "bce": g_bce, "dif": g_dif},
         "conciliado_total": conciliado_total, "diagnostico": diag,
-        "bce_ajustado": bce_aj,
+        "prestamos": prestamos, "bce_ajustado": bce_aj,
     }
 
 
@@ -339,17 +349,27 @@ def api_aplicar_pago_directo():
 
     # Agregar la fila al MISMO archivo .xls del BCE que el usuario subió
     info = PERIODO_FILES.setdefault(periodo, {"bce": None, "mef": None, "ajustes": []})
-    ajuste = {"acreedor": acreedor, "referencia": data.get("referencia", ""),
-              "valor": valor, "nota": nota,
+    ajuste = {"acreedor": acreedor, "concepto": concepto,
+              "referencia": data.get("referencia", ""), "valor": valor, "nota": nota,
               "prestamista": data.get("prestamista", acreedor)}
     info["ajustes"].append(ajuste)
+    modificado = False
+    motivo = ""
     if info.get("bce") and os.path.exists(info["bce"]):
         try:
-            C.modificar_bce_xls(info["bce"], [ajuste])  # sobrescribe el mismo archivo
-        except Exception:
-            pass
+            modificado = C.modificar_bce_xls(info["bce"], [ajuste])
+            if not modificado:
+                motivo = ("No se pudo modificar el .xls (falta xlutils/xlwt). "
+                          "Ejecute: pip install xlutils xlwt")
+        except Exception as e:
+            motivo = f"No se pudo modificar el archivo: {e}"
+    else:
+        motivo = "No tengo el archivo del BCE de este periodo en memoria; vuelva a conciliar."
 
-    return jsonify(_resultado_periodo(periodo))
+    res = _resultado_periodo(periodo)
+    res["archivo_modificado"] = modificado
+    res["archivo_motivo"] = motivo
+    return jsonify(res)
 
 
 @app.route("/api/descargar_bce_ajustado")
@@ -476,6 +496,8 @@ PANEL_HTML = r"""<!doctype html>
   .flagbar{display:flex;height:6px;width:96px;border-radius:3px;overflow:hidden;margin:9px auto 0;box-shadow:0 1px 4px #0006}
   .flagbar i{flex:1}.flagbar .y{background:#ffd200}.flagbar .b{background:#0033a0}.flagbar .r{background:#ed1c24}
   .logo-slot{position:relative}
+  .loan{background:#0c1428;border:1px solid var(--line);border-radius:9px;padding:11px 13px;margin-top:10px}
+  .loan .lh{font-size:13px;color:#e9eefb}.loan .lm{display:block;color:var(--muted);font-size:11.5px;margin-top:3px}
   .muted{color:var(--muted)}
 </style></head>
 <body>
@@ -538,7 +560,7 @@ const CONCEPTOS=["Desembolsos","Amortizaciones","Intereses","Comisiones","Intere
 const RUBRO_TXT={"Desembolsos":"desembolsos","Amortizaciones":"amortizaciones","Intereses":"intereses","Comisiones":"comisiones","Intereses Condonados":"condonados","Interés por Mora":"intereses por mora"};
 const CARTERA_TXT={"AMAZON DAC":"AMAZON"};
 const ORDEN_QUIPUX=["AIIB","AMAZON DAC","BANCOS","BID","BIRF","BONOS","CAF","FIDA","FLAR","FMI","GOBIERNOS","GPS"];
-let FILES=[], DATA=[], TOTALES=[], GTOT=null, DIAG=[], INFO=null, RES=null, PERIODO="";
+let FILES=[], DATA=[], TOTALES=[], GTOT=null, DIAG=[], PREST={}, INFO=null, RES=null, PERIODO="";
 const fmt=n=>(n||0).toLocaleString("es-EC",{minimumFractionDigits:2,maximumFractionDigits:2});
 function msg(t,err){const m=document.getElementById("msg");m.textContent=t;m.style.color=err?"#f87171":"#34d399";}
 const valido=f=>f&&/\.(xls|xlsx)$/i.test(f.name);
@@ -565,7 +587,7 @@ async function ejecutar(){
   }catch(e){msg(e.message,true);}btn.disabled=false;
 }
 function aplicarResultado(j){
-  RES=j;DATA=j.registros;TOTALES=j.totales||[];GTOT=j.gran_total;DIAG=j.diagnostico||[];INFO=j.info_periodo||INFO;PERIODO=j.periodo;
+  RES=j;DATA=j.registros;TOTALES=j.totales||[];GTOT=j.gran_total;DIAG=j.diagnostico||[];PREST=j.prestamos||{};INFO=j.info_periodo||INFO;PERIODO=j.periodo;
   const pb=document.getElementById("periodoBadge");pb.textContent=INFO?INFO.texto:PERIODO;pb.className="badge "+(j.conciliado_total?"ok":"set");
   const px=document.getElementById("perBox");px.style.display="block";px.textContent=INFO?INFO.texto:PERIODO;
   pintarSidebar();pintarMatriz();pintarAjustes();pintarQuipux();
@@ -612,14 +634,44 @@ function pintarAjustes(){
       <div class="ic">&#128196;</div><div class="ti">Respaldo(s) de pago directo</div><div class="de">Arrastre aqui o haga clic</div>
       <input type="file" id="filePd" accept=".xls,.xlsx" multiple onchange="subirPd(this.files)"></div>
     <div id="pdPrev"></div><div id="bceDl" style="margin-top:12px"></div></div>`;
-  h+=`<div class="diaghead">Carteras no conciliadas<small>${DIAG.length} cartera(s) con diferencia &middot; explicacion segun Observaciones del MEF</small></div>`;
-  h+= DIAG.length ? DIAG.map(d=>{const c=cls(d.tipo);
-    const m=Object.entries(d.rubros||{}).map(([k,v])=>`&Delta; ${k}: ${fmt(v)}`).join(" &middot; ");
-    const obs=d.observacion?`<div class="dobs">&#128221; <b>Observacion MEF:</b> ${d.observacion}</div>`:`<div class="dobs muted">Sin observacion del MEF.</div>`;
-    return `<div class="dcard ${c}"><div class="dh"><span class="dname">${CARTERA_TXT[d.acreedor]||d.acreedor}</span><span class="dtag ${c}">${d.tipo}</span><span class="dmonto">${m}</span></div>${obs}
-      <div class="dgrid"><div class="dbox why"><div class="bt">Por que no concilia</div><div class="bd">${d.por_que}</div></div>
-      <div class="dbox act"><div class="bt">Accion</div><div class="bd">${d.accion}</div></div></div></div>`;}).join("") : `<div class="note-ok">No hay carteras con diferencia.</div>`;
+  const difCarteras=TOTALES.filter(t=>t.estado==='DIFERENCIA').map(t=>t.acreedor);
+  h+=`<div class="diaghead">Carteras no conciliadas<small>${difCarteras.length} cartera(s) con diferencia &middot; se identifica el credito exacto que no cuadra</small></div>`;
+  if(!difCarteras.length){ h+=`<div class="note-ok">No hay carteras con diferencia.</div>`; }
+  else h+=difCarteras.map(ac=>{
+    const d=DIAG.find(x=>x.acreedor===ac);
+    const tipo=d?d.tipo:"Revisar"; const c=cls(tipo);
+    const obs=d&&d.observacion?`<div class="dobs">&#128221; <b>Observacion MEF:</b> ${d.observacion}</div>`:"";
+    // Prestamos que no cuadran (de todos los conceptos de esta cartera)
+    let loansHtml="";
+    Object.keys(PREST).filter(k=>k.split("|")[0]===ac).forEach(k=>{
+      const concepto=k.split("|")[1];
+      PREST[k].forEach((p,idx)=>{
+        const id=(ac+concepto+p.credito).replace(/[^A-Za-z0-9]/g,"");
+        loansHtml+=`<div class="loan"><div class="lh"><b>Credito ${p.credito}</b> &middot; ${concepto}
+          <span class="lm">MEF ${fmt(p.mef)} &nbsp;|&nbsp; BCE ${fmt(p.bce)} &nbsp;|&nbsp; falta <b style="color:var(--bad)">${fmt(p.dif)}</b></span></div>
+          <div class="frow" style="margin-top:8px">
+            <div class="fld"><label>Valor a agregar (USD)</label><input type="number" id="lv${id}" value="${p.dif}" step="0.01" style="width:160px"></div>
+            <div class="fld" style="flex:1;min-width:220px"><label>Nota</label><input type="text" id="ln${id}" value="Ajuste credito ${p.credito} (${concepto})" style="width:100%"></div>
+            <button class="btn" onclick="aplicarCredito('${ac}','${concepto}','${p.credito}','${id}')">Agregar al BCE</button>
+          </div></div>`;
+      });
+    });
+    if(!loansHtml) loansHtml=`<div class="dobs muted">No pude desglosar el credito (revise el detalle del MEF/BCE).</div>`;
+    return `<div class="dcard ${c}"><div class="dh"><span class="dname">${CARTERA_TXT[ac]||ac}</span><span class="dtag ${c}">${tipo}</span></div>${obs}${loansHtml}</div>`;
+  }).join("");
   cont.innerHTML=h;if(RES&&RES.bce_ajustado)mostrarDescargaBce();
+}
+async function aplicarCredito(acreedor,concepto,credito,id){
+  const valor=parseFloat(document.getElementById("lv"+id).value)||0;
+  const nota=document.getElementById("ln"+id).value.trim();
+  if(!valor){alert("Ingrese el valor a agregar.");return;}
+  const j=await (await fetch("/api/aplicar_pago_directo",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({periodo:PERIODO,acreedor,concepto,valor,nota,referencia:credito})})).json();
+  if(!j.ok){alert(j.error||"Error");return;}
+  const mod=j.archivo_modificado;
+  aplicarResultado({...j,info_periodo:INFO});mostrarDescargaBce();
+  alert((mod?"✓ Agregado al archivo del BCE":"⚠ Registrado, pero el archivo no se modifico: "+(j.archivo_motivo||""))
+    +"\nCredito "+credito+" ("+concepto+"): "+fmt(valor));
 }
 function onDropPd(e){e.preventDefault();e.currentTarget.classList.remove("over");if(e.dataTransfer.files.length)subirPd(e.dataTransfer.files);}
 async function subirPd(files){

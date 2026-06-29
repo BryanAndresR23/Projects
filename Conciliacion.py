@@ -567,9 +567,108 @@ def exportar_bce_ajustado(ruta_bce, ajustes, ruta_salida):
     return True
 
 
+# -------------------------------------------------------------------------
+# DIAGNÓSTICO POR PRÉSTAMO  —  identifica el crédito exacto que no cuadra
+# -------------------------------------------------------------------------
+# El MEF entrega una hoja por cartera con el detalle por préstamo; el BCE trae
+# el detalle por crédito en 'Giros al/del Exterior'. Se cruzan por número de
+# crédito para señalar exactamente cuál descuadra y por cuánto.
+MEF_HOJA = {"BID": "BID", "BIRF": "BIRF", "CAF": "CAF", "FMI": "FMI",
+            "FLAR": "FLAR", "FIDA": "FIDA", "AIIB": "AIIB", "BANCOS": "BANCOS",
+            "GOBIERNOS": "GOBIERNOS", "BONOS": "BONOS", "GPS": "GPS",
+            "AMAZON DAC": "ADAC"}
+# Columna del rubro en la hoja-cartera del MEF (por título de encabezado)
+MEF_HOJA_COL = {
+    "Desembolsos":          (["giros"], []),
+    "Amortizaciones":       (["principal"], []),
+    "Intereses":            (["intereses pagad", "interes pagad", "interes"], ["condon", "mora"]),
+    "Comisiones":           (["comision"], []),
+    "Intereses Condonados": (["condonad"], []),
+}
+
+
+def _numkey(ref):
+    m = re.findall(r"\d{2,8}", str(ref))
+    return m[0] if m else normaliza(ref)
+
+
+def _hoja_mef_cartera(libro, cartera):
+    objetivo = MEF_HOJA.get(cartera, cartera)
+    for h in libro.sheets():
+        if objetivo.lower() in h.name.lower():
+            return h
+    return None
+
+
+def diagnostico_prestamos(ruta_mef, ruta_bce, pares):
+    """Para cada (cartera, concepto) con diferencia, cruza préstamo por
+    préstamo (por número de crédito) y devuelve los que no cuadran.
+    pares = lista de (cartera, concepto). Devuelve
+    { (cartera, concepto): [ {credito, mef, bce, dif} ] }."""
+    lm = xlrd.open_workbook(ruta_mef)
+    lb = xlrd.open_workbook(ruta_bce)
+    salida = {}
+    for cartera, concepto in pares:
+        if concepto not in MEF_HOJA_COL:
+            continue
+        hoja_mef = _hoja_mef_cartera(lm, cartera)
+        if hoja_mef is None:
+            continue
+        hrm = 0
+        cabm = _celdas_encabezado(hoja_mef, hrm)
+        c_ref_m = buscar_col(cabm, (["referencia"], []), 2)
+        c_val_m = buscar_col(cabm, MEF_HOJA_COL[concepto], None)
+        if c_val_m is None:
+            continue
+        mef = {}
+        for r in range(hrm + 1, hoja_mef.nrows):
+            ref = str(hoja_mef.cell_value(r, c_ref_m)).strip()
+            if not ref:
+                continue
+            v = num(hoja_mef.cell_value(r, c_val_m))
+            if v:
+                mef[_numkey(ref)] = mef.get(_numkey(ref), 0.0) + v
+        # BCE: hoja y columna según concepto
+        es_des = concepto == "Desembolsos"
+        hoja_bce = abrir_hoja(lb, DESEMBOLSO if es_des else PAGO)
+        hrb = fila_encabezado(hoja_bce, "Agrupaci")
+        cabb = _celdas_encabezado(hoja_bce, hrb)
+        c_grp = buscar_col(cabb, SPEC_GRUPO, 4 if es_des else 8)
+        c_ref_b = buscar_col(cabb, SPEC_REF_DEL if es_des else SPEC_REF_AL, 3 if es_des else 7)
+        spec_val = BCE_DEL_VALOR if es_des else BCE_AL_COLS[concepto]
+        c_val_b = buscar_col(cabb, spec_val, 10 if es_des else 20)
+        bce = {}
+        grupo = None
+        for r in range(hrb + 1, hoja_bce.nrows):
+            et = str(hoja_bce.cell_value(r, c_grp)).strip()
+            if et:
+                grupo = et
+            ref = str(hoja_bce.cell_value(r, c_ref_b)).strip()
+            if not ref or grupo is None:
+                continue
+            if acreedor_mef(grupo) != cartera:
+                continue
+            v = num(hoja_bce.cell_value(r, c_val_b))
+            if v:
+                bce[_numkey(ref)] = bce.get(_numkey(ref), 0.0) + v
+        items = []
+        for k in sorted(set(mef) | set(bce)):
+            m = round(mef.get(k, 0.0), 2)
+            b = round(bce.get(k, 0.0), 2)
+            if abs(m - b) > 0.01:
+                items.append({"credito": k, "mef": m, "bce": b,
+                              "dif": round(m - b, 2)})
+        if items:
+            salida[f"{cartera}|{concepto}"] = items
+    return salida
+
+
 def modificar_bce_xls(ruta_bce, ajustes):
-    """Agrega las filas de pago directo DENTRO del MISMO archivo .xls del BCE
-    (lo sobrescribe), en la hoja 'Giros del Exterior', resaltadas en amarillo.
+    """Agrega filas de ajuste DENTRO del MISMO archivo .xls del BCE (lo
+    sobrescribe), resaltadas en amarillo, en la hoja que corresponde al rubro:
+    'Giros del Exterior' para Desembolsos y 'Giros al Exterior' para los demás
+    (capital/interés/comisión/condonados/mora). Cada ajuste:
+    {acreedor, concepto, referencia, valor, nota}.
     Requiere xlutils + xlwt. Devuelve True si modificó el archivo."""
     try:
         from xlutils.copy import copy as xl_copy
@@ -580,37 +679,49 @@ def modificar_bce_xls(ruta_bce, ajustes):
         rb = xlrd.open_workbook(ruta_bce, formatting_info=True)
     except Exception:
         rb = xlrd.open_workbook(ruta_bce)
-    idx = None
-    for i, sh in enumerate(rb.sheets()):
-        if "del" in sh.name.lower():
-            idx, hoja = i, sh
-            break
-    if idx is None:
-        return False
-    hr = fila_encabezado(hoja, "Agrupaci")
-    cab = _celdas_encabezado(hoja, hr)
-    c_fecha = buscar_col(cab, (["fecha"], []), 1)
-    c_sig = buscar_col(cab, SPEC_REF_DEL, 2)
-    c_ref = buscar_col(cab, (["referencia"], []), 3)
-    c_grp = buscar_col(cab, SPEC_GRUPO, 4)
-    c_prest = buscar_col(cab, (["prestamista"], []), 5)
-    c_val = buscar_col(cab, BCE_DEL_VALOR, 10)
-    c_nota = buscar_col(cab, (["nota"], []), max(hoja.ncols - 1, 6))
+
+    def idx_hoja(kind):
+        for i, sh in enumerate(rb.sheets()):
+            n = sh.name.lower()
+            if kind == "del" and " del" in n:
+                return i, sh
+            if kind == "al" and " al" in n:
+                return i, sh
+        return None, None
 
     wb = xl_copy(rb)
-    ws = wb.get_sheet(idx)
     estilo = xlwt.easyxf("pattern: pattern solid, fore_colour light_yellow;")
     fecha = datetime.now().strftime("%d/%m/%Y")
-    r = hoja.nrows
+    # fila de escritura por hoja (se va incrementando)
+    filaw = {}
+    algo = False
     for aj in ajustes:
+        concepto = aj.get("concepto", "Desembolsos")
+        es_des = concepto == "Desembolsos"
+        idx, hoja = idx_hoja("del" if es_des else "al")
+        if idx is None:
+            continue
+        hr = fila_encabezado(hoja, "Agrupaci")
+        cab = _celdas_encabezado(hoja, hr)
+        c_fecha = buscar_col(cab, (["fecha"], []), 1)
+        c_ref = buscar_col(cab, (["referencia"], []), 3 if es_des else 7)
+        c_grp = buscar_col(cab, SPEC_GRUPO, 4 if es_des else 8)
+        c_prest = buscar_col(cab, (["prestamista"], []), 5 if es_des else 9)
+        spec_val = BCE_DEL_VALOR if es_des else BCE_AL_COLS.get(concepto, BCE_DEL_VALOR)
+        c_val = buscar_col(cab, spec_val, 10 if es_des else 20)
+        c_nota = buscar_col(cab, (["nota"], []), max(hoja.ncols - 1, 6))
+        ws = wb.get_sheet(idx)
+        r = filaw.get(idx, hoja.nrows)
         ws.write(r, c_fecha, fecha, estilo)
-        ws.write(r, c_sig, aj.get("referencia", ""), estilo)
         ws.write(r, c_ref, aj.get("referencia", ""), estilo)
         ws.write(r, c_grp, aj.get("acreedor", ""), estilo)
         ws.write(r, c_prest, aj.get("prestamista", aj.get("acreedor", "")), estilo)
         ws.write(r, c_val, float(aj.get("valor", 0)), estilo)
         ws.write(r, c_nota, aj.get("nota", ""), estilo)
-        r += 1
+        filaw[idx] = r + 1
+        algo = True
+    if not algo:
+        return False
     wb.save(ruta_bce)
     return True
 
