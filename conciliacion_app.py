@@ -280,7 +280,8 @@ def _resultado_periodo(periodo):
         # Diagnóstico por préstamo: qué crédito exacto no cuadra
         if pares and bce_path and os.path.exists(bce_path):
             try:
-                prestamos = C.diagnostico_prestamos(mef_path, bce_path, pares)
+                prestamos = C.diagnostico_prestamos(mef_path, bce_path, pares,
+                                                    info.get("ajustes"))
             except Exception:
                 prestamos = {}
     bce_aj = bool(info.get("ajustes"))
@@ -502,7 +503,7 @@ PANEL_HTML = r"""<!doctype html>
 </style></head>
 <body>
   <aside class="side">
-    <div class="brand"><span class="logo-slot"><img class="bce-logo" src="/logo" alt="Banco Central del Ecuador" onerror="this.style.display='none'" onload="var sib=this.nextElementSibling; if(sib) sib.style.display='none';"><svg class="bce-sun" viewBox="0 0 140 140" xmlns="http://www.w3.org/2000/svg" aria-label="Banco Central del Ecuador"><g fill="#E6B422"><polygon points="130.0,70.0 91.8,67.1 91.8,72.9"/><polygon points="116.2,89.1 91.1,76.3 89.4,80.4"/><polygon points="112.4,112.4 87.4,83.4 83.4,87.4"/><polygon points="89.1,116.2 80.4,89.4 76.3,91.1"/><polygon points="70.0,130.0 72.9,91.8 67.1,91.8"/><polygon points="50.9,116.2 63.7,91.1 59.6,89.4"/><polygon points="27.6,112.4 56.6,87.4 52.6,83.4"/><polygon points="23.8,89.1 50.6,80.4 48.9,76.3"/><polygon points="10.0,70.0 48.2,72.9 48.2,67.1"/><polygon points="23.8,50.9 48.9,63.7 50.6,59.6"/><polygon points="27.6,27.6 52.6,56.6 56.6,52.6"/><polygon points="50.9,23.8 59.6,50.6 63.7,48.9"/><polygon points="70.0,10.0 67.1,48.2 72.9,48.2"/><polygon points="89.1,23.8 76.3,48.9 80.4,50.6"/><polygon points="112.4,27.6 83.4,52.6 87.4,56.6"/><polygon points="116.2,50.9 89.4,59.6 91.1,63.7"/><circle cx="70" cy="70" r="22"/></g><g fill="#1a2440"><circle cx="62" cy="66" r="3.4"/><circle cx="78" cy="66" r="3.4"/><path d="M58 76 Q70 86 82 76" stroke="#1a2440" stroke-width="3.2" fill="none" stroke-linecap="round"/><path d="M64 58 Q70 54 76 58" stroke="#1a2440" stroke-width="2.6" fill="none" stroke-linecap="round"/></g></svg></span><div class="flagbar"><i class="y"></i><i class="b"></i><i class="r"></i></div><div class="wordmark" style="margin-top:10px"><div class="b1">BANCO CENTRAL</div><div class="b2">DEL ECUADOR</div></div><div class="ln"></div><h2 style="font-size:12px;letter-spacing:1px;color:var(--gold2)">CONCILIACION DE DEUDA EXTERNA</h2><small>Servicios Financieros Internacionales</small></div>
+    <div class="brand"><span class="logo-slot"><img class="bce-logo" src="/logo" alt="Banco Central del Ecuador" onerror="this.style.display='none'" onload="var sib=this.nextElementSibling; if(sib) sib.style.display='none';"><svg class="bce-sun" viewBox="0 0 140 140" xmlns="http://www.w3.org/2000/svg" aria-label="Banco Central del Ecuador"><g fill="#E6B422"><polygon points="130.0,70.0 91.8,67.1 91.8,72.9"/><polygon points="116.2,89.1 91.1,76.3 89.4,80.4"/><polygon points="112.4,112.4 87.4,83.4 83.4,87.4"/><polygon points="89.1,116.2 80.4,89.4 76.3,91.1"/><polygon points="70.0,130.0 72.9,91.8 67.1,91.8"/><polygon points="50.9,116.2 63.7,91.1 59.6,89.4"/><polygon points="27.6,112.4 56.6,87.4 52.6,83.4"/><polygon points="23.8,89.1 50.6,80.4 48.9,76.3"/><polygon points="10.0,70.0 48.2,72.9 48.2,67.1"/><polygon points="23.8,50.9 48.9,63.7 50.6,59.6"/><polygon points="27.6,27.6 52.6,56.6 56.6,52.6"/><polygon points="50.9,23.8 59.6,50.6 63.7,48.9"/><polygon points="70.0,10.0 67.1,48.2 72.9,48.2"/><polygon points="89.1,23.8 76.3,48.9 80.4,50.6"/><polygon points="112.4,27.6 83.4,52.6 87.4,56.6"/><polygon points="116.2,50.9 89.4,59.6 91.1,63.7"/><circle cx="70" cy="70" r="22"/></g><g fill="#1a2440"><circle cx="62" cy="66" r="3.4"/><circle cx="78" cy="66" r="3.4"/><path d="M58 76 Q70 86 82 76" stroke="#1a2440" stroke-width="3.2" fill="none" stroke-linecap="round"/><path d="M64 58 Q70 54 76 58" stroke="#1a2440" stroke-width="2.6" fill="none" stroke-linecap="round"/></g></svg></span><div class="ln"></div><h2 style="font-size:12px;letter-spacing:1px;color:var(--gold2)">CONCILIACION DE DEUDA EXTERNA</h2><small>Servicios Financieros Internacionales</small></div>
     <nav class="nav" id="nav">
       <div class="it act" data-v="cargar"><div class="num">I</div><div><div class="tt">Recepcion de Reportes</div><div class="ss">MEF &middot; BCE</div></div></div>
       <div class="it" data-v="resultados"><div class="num">II</div><div><div class="tt">Conciliacion de Carteras</div><div class="ss">Cruce y resultados</div></div></div>
@@ -631,14 +632,8 @@ function pintarAjustes(){
     cont.innerHTML=`<div class="note-ok">&#10004; Conciliacion completa. ${RES.bce_ajustado?"Se aplicaron ajustes; ya puede descargar el reporte BCE modificado.":"El MEF remitio la informacion completamente conciliada; no se requieren ajustes."}</div>`+dl;
     return;}
   const cls=t=>t==="Pago Directo"?"pd":t==="Diferencial Cambiario"?"dc":"ot";
-  let h=`<div class="card"><h3 class="sec" style="font-size:15px"><span class="bar"></span>Respaldo de pago directo (MEF)</h3>
-    <p class="sub" style="margin:8px 0 14px">Cargue el respaldo que el MEF remite por Quipux. El valor se agrega en el mismo archivo del BCE y podra descargarlo modificado.</p>
-    <div class="drop" id="dzPd" onclick="document.getElementById('filePd').click()" ondrop="onDropPd(event)" ondragover="onOver(event)" ondragleave="onLeave(event)">
-      <div class="ic">&#128196;</div><div class="ti">Respaldo(s) de pago directo</div><div class="de">Arrastre aqui o haga clic</div>
-      <input type="file" id="filePd" accept=".xls,.xlsx" multiple onchange="subirPd(this.files)"></div>
-    <div id="pdPrev"></div><div id="bceDl" style="margin-top:12px"></div></div>`;
   const difCarteras=TOTALES.filter(t=>t.estado==='DIFERENCIA').map(t=>t.acreedor);
-  h+=`<div class="diaghead">Carteras no conciliadas<small>${difCarteras.length} cartera(s) con diferencia &middot; se identifica el credito exacto que no cuadra</small></div>`;
+  let h=`<div class="diaghead">Carteras no conciliadas<small>${difCarteras.length} cartera(s) con diferencia &middot; se identifica el credito exacto que no cuadra. Cada ajuste agregado desaparece de la lista.</small></div>`;
   if(!difCarteras.length){ h+=`<div class="note-ok">No hay carteras con diferencia.</div>`; }
   else h+=difCarteras.map(ac=>{
     const d=DIAG.find(x=>x.acreedor===ac);
@@ -651,16 +646,23 @@ function pintarAjustes(){
       PREST[k].forEach((p,idx)=>{
         const id=(ac+concepto+p.credito).replace(/[^A-Za-z0-9]/g,"");
         const refc=p.referencia||(ac+"-"+p.credito);
+        const esPD=(tipo==="Pago Directo"&&concepto==="Desembolsos");
         const notaDef=(concepto==="Desembolsos")
           ? `Considerar desembolso realizado a traves de la modalidad "pago directo", credito ${refc}`
           : `Ajuste ${concepto} - credito ${refc}`;
+        const accion=esPD
+          ? `<input type="file" id="lf${id}" accept=".xls,.xlsx,.pdf" style="display:none" onchange="document.getElementById('lfn${id}').textContent=this.files.length?this.files[0].name:''">
+             <button class="btn gh" onclick="document.getElementById('lf${id}').click()">&#128206; Subir respaldo</button>
+             <span class="muted" id="lfn${id}" style="font-size:11.5px"></span>
+             <button class="btn" onclick="aplicarCredito('${ac}','${concepto}','${id}')">Agregar al BCE</button>`
+          : `<button class="btn" onclick="aplicarCredito('${ac}','${concepto}','${id}')">Agregar al BCE</button>`;
         loansHtml+=`<div class="loan"><div class="lh"><b>${refc}</b> &middot; ${concepto}
           <span class="lm">MEF ${fmt(p.mef)} &nbsp;|&nbsp; BCE ${fmt(p.bce)} &nbsp;|&nbsp; falta <b style="color:var(--bad)">${fmt(p.dif)}</b></span></div>
           <div class="frow" style="margin-top:8px">
             <div class="fld"><label>Referencia</label><input type="text" id="lr${id}" value="${refc}" style="width:160px"></div>
             <div class="fld"><label>Valor a agregar (USD)</label><input type="number" id="lv${id}" value="${p.dif}" step="0.01" style="width:150px"></div>
             <div class="fld" style="flex:1;min-width:220px"><label>Nota / Observacion</label><input type="text" id="ln${id}" value="${notaDef.replace(/"/g,'&quot;')}" style="width:100%"></div>
-            <button class="btn" onclick="aplicarCredito('${ac}','${concepto}','${id}')">Agregar al BCE</button>
+            ${accion}
           </div></div>`;
       });
     });
@@ -672,9 +674,16 @@ function pintarAjustes(){
 }
 async function aplicarCredito(acreedor,concepto,id){
   const valor=parseFloat(document.getElementById("lv"+id).value)||0;
-  const nota=document.getElementById("ln"+id).value.trim();
+  let nota=document.getElementById("ln"+id).value.trim();
   const referencia=document.getElementById("lr"+id).value.trim();
   if(!valor){alert("Ingrese el valor a agregar.");return;}
+  // Si hay respaldo adjunto (pago directo), subirlo y anexarlo a la nota
+  const fin=document.getElementById("lf"+id);
+  if(fin&&fin.files&&fin.files.length){
+    const fd=new FormData();fd.append("archivos",fin.files[0]);
+    try{await fetch("/api/pago_directo",{method:"POST",body:fd});}catch(e){}
+    nota+="  (respaldo: "+fin.files[0].name+")";
+  }
   const j=await (await fetch("/api/aplicar_pago_directo",{method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({periodo:PERIODO,acreedor,concepto,valor,nota,referencia})})).json();
   if(!j.ok){alert(j.error||"Error");return;}

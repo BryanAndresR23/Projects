@@ -600,11 +600,14 @@ def _hoja_mef_cartera(libro, cartera):
     return None
 
 
-def diagnostico_prestamos(ruta_mef, ruta_bce, pares):
+def diagnostico_prestamos(ruta_mef, ruta_bce, pares, aplicados=None):
     """Para cada (cartera, concepto) con diferencia, cruza préstamo por
     préstamo (por número de crédito) y devuelve los que no cuadran.
-    pares = lista de (cartera, concepto). Devuelve
-    { (cartera, concepto): [ {credito, mef, bce, dif} ] }."""
+    pares = lista de (cartera, concepto).
+    aplicados = lista de ajustes ya agregados [{acreedor, concepto, referencia,
+    valor}]; su valor se suma al lado del BCE para que el crédito ya gestionado
+    desaparezca del diagnóstico aunque el archivo aún no se haya reescrito.
+    Devuelve { 'cartera|concepto': [ {credito, referencia, mef, bce, dif} ] }."""
     lm = xlrd.open_workbook(ruta_mef)
     lb = xlrd.open_workbook(ruta_bce)
     salida = {}
@@ -656,6 +659,11 @@ def diagnostico_prestamos(ruta_mef, ruta_bce, pares):
             v = num(hoja_bce.cell_value(r, c_val_b))
             if v:
                 bce[k] = bce.get(k, 0.0) + v
+        # Sumar al BCE los ajustes ya gestionados (para que desaparezcan)
+        for ap in (aplicados or []):
+            if ap.get("acreedor") == cartera and ap.get("concepto", "Desembolsos") == concepto:
+                k = _numkey(ap.get("referencia", ""))
+                bce[k] = bce.get(k, 0.0) + float(ap.get("valor", 0))
         items = []
         for k in sorted(set(mef) | set(bce)):
             m = round(mef.get(k, 0.0), 2)
