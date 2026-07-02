@@ -616,7 +616,7 @@ function pintarMatriz(){
   h+=`</tr></tbody>`;document.getElementById("mtable").innerHTML=h;
   const dif=RES.diferencias;
   document.getElementById("stats").innerHTML=
-    `<div class="stat"><div class="n">${TOTALES.length} / ${RES.total}</div><div class="l">Carteras / rubros con movimiento</div></div>
+    `<div class="stat"><div class="n">${RES.total}</div><div class="l">Rubros con movimiento (${TOTALES.length} carteras)</div></div>
      <div class="stat ok"><div class="n">${RES.conciliados}</div><div class="l">Conciliados</div></div>
      <div class="stat bad"><div class="n">${dif}</div><div class="l">Con diferencia</div></div>
      <div class="stat gold"><div class="n">${fmt(GTOT.mef)}</div><div class="l">Total general (USD)</div></div>`;
