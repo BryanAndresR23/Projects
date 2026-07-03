@@ -614,16 +614,18 @@ function pintarMatriz(){
   CONCEPTOS.forEach(c=>{const m=tot[c].mef,b=tot[c].bce,d=Math.round((m-b)*100)/100,z=Math.abs(d)<0.005;
     h+=`<td class="num sep">${fmt(m)}</td><td class="num">${fmt(b)}</td><td class="d ${z?'ok':''}">${z?'&#10003;':'+'+fmt(Math.abs(d))}</td>`;});
   h+=`</tr></tbody>`;document.getElementById("mtable").innerHTML=h;
-  const dif=RES.diferencias;
+  const cartOk=TOTALES.filter(t=>t.estado==='CONCILIADO').length;
+  const cartDif=TOTALES.length-cartOk;
+  const nombresDif=TOTALES.filter(t=>t.estado!=='CONCILIADO').map(t=>CARTERA_TXT[t.acreedor]||t.acreedor).join(", ");
   document.getElementById("stats").innerHTML=
-    `<div class="stat"><div class="n">${RES.total}</div><div class="l">Rubros con movimiento (${TOTALES.length} carteras)</div></div>
-     <div class="stat ok"><div class="n">${RES.conciliados}</div><div class="l">Conciliados</div></div>
-     <div class="stat bad"><div class="n">${dif}</div><div class="l">Con diferencia</div></div>
-     <div class="stat gold"><div class="n">${fmt(GTOT.mef)}</div><div class="l">Total general (USD)</div></div>`;
-  document.getElementById("resSub").textContent=`Periodo ${INFO?INFO.texto:PERIODO} · ${RES.conciliados} de ${RES.total} conceptos conciliados`;
-  document.getElementById("resAlert").innerHTML = dif===0
-    ? `<div class="note-ok">&#10004; Conciliacion completa: todas las carteras cuadran al centavo. Puede emitir el oficio de respuesta.</div>`
-    : `<div class="note-warn">&#9888; ${dif} concepto(s) sin conciliar. Gestione las observaciones antes de emitir el oficio.</div>`;
+    `<div class="stat ${cartDif===0?'ok':''}"><div class="n">${cartOk}/${TOTALES.length}</div><div class="l">Carteras conciliadas</div></div>
+     <div class="stat bad"><div class="n">${cartDif}</div><div class="l">Carteras con diferencia</div></div>
+     <div class="stat gold"><div class="n">${fmt(GTOT.mef)}</div><div class="l">Total MEF (USD)</div></div>
+     <div class="stat gold"><div class="n">${fmt(GTOT.bce)}</div><div class="l">Total BCE (USD)</div></div>`;
+  document.getElementById("resSub").textContent=`Periodo ${INFO?INFO.texto:PERIODO} · ${cartOk} de ${TOTALES.length} carteras conciliadas`;
+  document.getElementById("resAlert").innerHTML = cartDif===0
+    ? `<div class="note-ok">&#10004; Conciliacion completa: las ${TOTALES.length} carteras cuadran al centavo. Puede emitir el oficio de respuesta.</div>`
+    : `<div class="note-warn">&#9888; ${cartDif} cartera(s) sin conciliar: ${nombresDif}. Gestione las observaciones antes de emitir el oficio.</div>`;
 }
 function pintarAjustes(){
   const cont=document.getElementById("ajContenido");
