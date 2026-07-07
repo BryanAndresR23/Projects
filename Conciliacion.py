@@ -680,91 +680,24 @@ def diagnostico_prestamos(ruta_mef, ruta_bce, pares, aplicados=None):
 
 
 def modificar_bce_xls(ruta_bce, ajustes):
-    """Inserta los ajustes en el MISMO archivo .xls del BCE conservando el
-    FORMATO ORIGINAL de cada celda (fuente, relleno, bordes, formato numérico).
-    - La fila nueva copia el estilo de una fila de detalle del reporte.
-    - Se inserta dentro del grupo de la cartera; si el grupo no existe se crea
-      el bloque completo (detalle + subtotal del prestamista + TOTAL cartera)
-      antes del TOTAL general, copiando los estilos de un bloque existente.
-    - Recalcula subtotales del grupo y el TOTAL general.
+    """Inserta los ajustes en el MISMO archivo .xls del BCE SIN alterar el
+    formato: usa xlutils.copy (conserva intactos los estilos originales de
+    todas las celdas existentes) y desplaza las filas hacia abajo para
+    insertar. Las filas nuevas copian el estilo exacto (xf) de una fila
+    plantilla del propio reporte: detalle, subtotal de prestamista o TOTAL.
+    Los subtotales del grupo y el TOTAL general se actualizan modificando
+    solo el número de la celda (el formato no se toca).
     Cada ajuste: {acreedor, concepto, referencia, valor, nota, prestamista}."""
     try:
-        import xlwt
+        import xlwt  # noqa: F401  (requerido por xlutils)
+        from xlutils.copy import copy as xl_copy
     except Exception:
         return False
     try:
         rb = xlrd.open_workbook(ruta_bce, formatting_info=True)
-        con_formato = True
     except Exception:
-        rb = xlrd.open_workbook(ruta_bce)
-        con_formato = False
-
-    out = xlwt.Workbook(encoding="utf-8")
-    # Paleta personalizada para reproducir los RGB exactos del archivo original
-    paleta = {}
-    siguiente = [8]
-
-    def color_idx(ci):
-        if not con_formato:
-            return None
-        rgb = rb.colour_map.get(ci)
-        if rgb is None:
-            return None
-        if rgb in paleta:
-            return paleta[rgb]
-        if siguiente[0] > 63:
-            return None
-        i = siguiente[0]
-        out.set_colour_RGB(i, *rgb)
-        paleta[rgb] = i
-        siguiente[0] += 1
-        return i
-
-    cache = {}
-
-    def estilo_de(xfi):
-        """Reconstruye un XFStyle de xlwt a partir del xf original de xlrd."""
-        import xlwt as _x
-        if not con_formato:
-            return _x.XFStyle()
-        if xfi in cache:
-            return cache[xfi]
-        xf = rb.xf_list[xfi]
-        fnt = rb.font_list[xf.font_index]
-        st = _x.XFStyle()
-        f = _x.Font()
-        f.name = fnt.name or "Calibri"
-        f.height = int(fnt.height or 220)
-        f.bold = bool(getattr(fnt, "bold", 0)) or getattr(fnt, "weight", 400) >= 700
-        f.italic = bool(getattr(fnt, "italic", 0))
-        ci = color_idx(fnt.colour_index)
-        if ci is not None:
-            f.colour_index = ci
-        st.font = f
-        al = _x.Alignment()
-        al.horz = xf.alignment.hor_align or 0
-        al.vert = xf.alignment.vert_align or 2
-        al.wrap = 1 if xf.alignment.text_wrapped else 0
-        st.alignment = al
-        bd = _x.Borders()
-        TH, NO = _x.Borders.THIN, _x.Borders.NO_LINE
-        bd.left = TH if xf.border.left_line_style else NO
-        bd.right = TH if xf.border.right_line_style else NO
-        bd.top = TH if xf.border.top_line_style else NO
-        bd.bottom = TH if xf.border.bottom_line_style else NO
-        st.borders = bd
-        if xf.background.fill_pattern == 1:
-            pt = _x.Pattern()
-            pt.pattern = _x.Pattern.SOLID_PATTERN
-            c2 = color_idx(xf.background.pattern_colour_index)
-            if c2 is not None:
-                pt.pattern_fore_colour = c2
-            st.pattern = pt
-        fmt = rb.format_map.get(xf.format_key)
-        if fmt and fmt.format_str and fmt.format_str.lower() != "general":
-            st.num_format_str = fmt.format_str
-        cache[xfi] = st
-        return st
+        return False
+    wb = xl_copy(rb)
 
     by_kind = {}
     for aj in ajustes:
@@ -774,157 +707,194 @@ def modificar_bce_xls(ruta_bce, ajustes):
     fecha = datetime.now().strftime("%d/%m/%Y")
     algo = False
 
-    for sh in rb.sheets():
+    for idx, sh in enumerate(rb.sheets()):
         nl = sh.name.lower()
         kind = "del" if " del" in nl else ("al" if " al" in nl else None)
+        if not kind or not by_kind.get(kind):
+            continue
+        ws = wb.get_sheet(idx)
+        rows = ws.rows  # dict {fila: Row} de xlwt con los xf originales
+
+        hr = fila_encabezado(sh, "Agrupaci")
+        cab = _celdas_encabezado(sh, hr)
+        es_des = kind == "del"
+        c_fecha = buscar_col(cab, (["fecha"], []), 1)
+        c_ref = buscar_col(cab, (["referencia"], []), 3 if es_des else 7)
+        c_grp = buscar_col(cab, SPEC_GRUPO, 4 if es_des else 8)
+        c_prest = buscar_col(cab, (["prestamista"], []), 5 if es_des else 9)
+        c_tot = buscar_col(cab, (["total", "usd"], []), None)
+        c_nota = buscar_col(cab, (["nota"], []), sh.ncols - 1)
+
+        # Copia lógica de valores para ubicar grupos (se mantiene en sincronía)
         vals = [[sh.cell_value(r, c) for c in range(sh.ncols)] for r in range(sh.nrows)]
-        xfs = [[sh.cell(r, c).xf_index for c in range(sh.ncols)] for r in range(sh.nrows)] \
-            if con_formato else [[None] * sh.ncols for _ in range(sh.nrows)]
-        plantilla = [None] * sh.nrows  # filas insertadas: de dónde copiar estilo
 
-        if kind and by_kind.get(kind):
-            hr = fila_encabezado(sh, "Agrupaci")
-            cab = _celdas_encabezado(sh, hr)
-            es_des = kind == "del"
-            c_fecha = buscar_col(cab, (["fecha"], []), 1)
-            c_ref = buscar_col(cab, (["referencia"], []), 3 if es_des else 7)
-            c_grp = buscar_col(cab, SPEC_GRUPO, 4 if es_des else 8)
-            c_prest = buscar_col(cab, (["prestamista"], []), 5 if es_des else 9)
-            c_tot = buscar_col(cab, (["total", "usd"], []), None)
-            c_nota = buscar_col(cab, (["nota"], []), sh.ncols - 1)
+        def es_sub(fila):
+            t = " ".join(str(fila[c]) for c in range(min(3, len(fila)))).upper()
+            if "TOTAL" in t:
+                return True
+            refv = str(fila[c_ref]).strip() if c_ref < len(fila) else ""
+            return (not refv) and any(isinstance(fila[c], (int, float)) and fila[c]
+                                      for c in range(len(fila)))
 
-            def es_sub(fila):
-                t = " ".join(str(fila[c]) for c in range(min(3, len(fila)))).upper()
-                if "TOTAL" in t:
-                    return True
-                refv = str(fila[c_ref]).strip() if c_ref < len(fila) else ""
-                return (not refv) and any(isinstance(fila[c], (int, float)) and fila[c]
-                                          for c in range(len(fila)))
+        # Plantillas de estilo (xf por columna), capturadas ANTES de desplazar
+        def xfs_de(r):
+            row = rows.get(r)
+            if not row:
+                return {}
+            return {cx: cel.xf_idx for cx, cel in row._Row__cells.items()
+                    if cel is not None and hasattr(cel, "xf_idx")}
 
-            # plantillas de estilo: detalle, subtotal de prestamista y TOTAL grupo
-            tpl_det = tpl_sub = tpl_tot = None
-            for r in range(hr + 1, sh.nrows):
-                t0 = " ".join(str(vals[r][c]) for c in range(min(3, sh.ncols))).upper().strip()
-                refv = str(vals[r][c_ref]).strip() if c_ref < sh.ncols else ""
-                if refv and tpl_det is None:
-                    tpl_det = r
-                elif t0.startswith("TOTAL") and tpl_tot is None:
-                    tpl_tot = r
-                elif (not refv) and tpl_det is not None and tpl_sub is None and es_sub(vals[r]):
-                    tpl_sub = r
-            tpl_det = tpl_det if tpl_det is not None else hr + 1
-            tpl_tot = tpl_tot if tpl_tot is not None else tpl_det
-            tpl_sub = tpl_sub if tpl_sub is not None else tpl_tot
+        tpl_det = tpl_sub = tpl_tot = None
+        for r in range(hr + 1, sh.nrows):
+            t0 = " ".join(str(vals[r][c]) for c in range(min(3, sh.ncols))).upper().strip()
+            refv = str(vals[r][c_ref]).strip() if c_ref < sh.ncols else ""
+            if refv and tpl_det is None:
+                tpl_det = r
+            elif t0.startswith("TOTAL") and tpl_tot is None:
+                tpl_tot = r
+            elif (not refv) and tpl_det is not None and tpl_sub is None and es_sub(vals[r]):
+                tpl_sub = r
+        XF_DET = xfs_de(tpl_det if tpl_det is not None else hr + 1)
+        XF_TOT = xfs_de(tpl_tot if tpl_tot is not None else hr + 1)
+        XF_SUB = xfs_de(tpl_sub) if tpl_sub is not None else XF_TOT
 
-            def gt_idx():
-                for i in range(len(vals) - 1, hr, -1):
-                    if any(str(vals[i][c]).strip().upper() == "TOTAL"
-                           for c in range(min(3, len(vals[i])))):
-                        return i
-                return len(vals)
+        def desplazar(ins, n=1):
+            """Baja n posiciones todas las filas >= ins (formato intacto)."""
+            for r in sorted([k for k in rows.keys() if k >= ins], reverse=True):
+                row = rows.pop(r)
+                row._Row__idx = r + n
+                for cel in row._Row__cells.values():
+                    if cel is not None and hasattr(cel, "rowx"):
+                        cel.rowx = r + n
+                rows[r + n] = row
 
-            def insertar(pos, fila, tpl):
-                vals.insert(pos, fila)
-                xfs.insert(pos, None)
-                plantilla.insert(pos, tpl)
+        def escribir(r, valores, xfs):
+            """Escribe una fila nueva aplicando el xf exacto de la plantilla."""
+            for cx in range(sh.ncols):
+                v = valores.get(cx, "")
+                if cx not in xfs and v in ("", None):
+                    continue
+                ws.write(r, cx, "" if v is None else v)
+                fila_ws = rows.get(r)
+                cel = fila_ws._Row__cells.get(cx) if fila_ws else None
+                if cel is not None and cx in xfs:
+                    cel.xf_idx = xfs[cx]
 
-            def fila_detalle(aj, c_val, val):
-                f = [""] * sh.ncols
-                if c_fecha is not None and c_fecha < sh.ncols:
-                    f[c_fecha] = fecha
-                if c_ref is not None:
-                    f[c_ref] = aj.get("referencia", "")
-                if c_grp is not None:
-                    f[c_grp] = aj.get("acreedor", "")
-                if c_prest is not None:
-                    f[c_prest] = aj.get("prestamista", aj.get("acreedor", ""))
-                if c_val is not None:
-                    f[c_val] = val
-                if c_tot is not None:
-                    f[c_tot] = val
-                if c_nota is not None and c_nota < sh.ncols:
-                    f[c_nota] = aj.get("nota", "")
-                return f
+        def sumar_num(r, cols, delta):
+            """Suma delta al número de la celda sin tocar su formato."""
+            row = rows.get(r)
+            if not row:
+                return
+            for cx in cols:
+                cel = row._Row__cells.get(cx)
+                if cel is not None and type(cel).__name__ == "NumberCell":
+                    cel.number = round(cel.number + delta, 2)
 
-            for aj in by_kind[kind]:
-                concepto = aj.get("concepto", "Desembolsos")
-                spec = BCE_DEL_VALOR if es_des else BCE_AL_COLS.get(concepto, BCE_DEL_VALOR)
-                c_val = buscar_col(cab, spec, 10 if es_des else 20)
-                val = float(aj.get("valor", 0))
-                grp_total = None
-                for i in range(hr + 1, len(vals)):
-                    t0 = " ".join(str(vals[i][c]) for c in range(min(3, len(vals[i])))).upper().strip()
-                    if t0.startswith("TOTAL ") and len(t0) > 6 and \
-                            acreedor_mef(t0[6:].strip(" -:")) == aj.get("acreedor"):
-                        grp_total = i
-                        break
-                if grp_total is not None:
-                    ins = grp_total
-                    while ins - 1 > hr and es_sub(vals[ins - 1]):
-                        ins -= 1
-                    bump = list(range(ins, grp_total + 1))
-                    insertar(ins, fila_detalle(aj, c_val, val), tpl_det)
-                    for b in [x + 1 for x in bump]:
-                        for cc in {c_val, c_tot}:
-                            if cc is not None and cc < len(vals[b]) and \
-                                    isinstance(vals[b][cc], (int, float)):
-                                vals[b][cc] = round(vals[b][cc] + val, 2)
-                else:
-                    # crear bloque completo: detalle + subtotal prestamista + TOTAL
-                    gi = gt_idx()
-                    prest = aj.get("prestamista", aj.get("acreedor", ""))
-                    sub = [""] * sh.ncols
-                    sub[1 if sh.ncols > 1 else 0] = prest
-                    tot = [""] * sh.ncols
-                    tot[1 if sh.ncols > 1 else 0] = "TOTAL " + prest
-                    for cc in {c_val, c_tot}:
-                        if cc is not None:
-                            sub[cc] = val
-                            tot[cc] = val
-                    insertar(gi, tot, tpl_tot)
-                    insertar(gi, sub, tpl_sub)
-                    insertar(gi, fila_detalle(aj, c_val, val), tpl_det)
-            # recalcular TOTAL general = suma de subtotales 'TOTAL <grupo>'
-            grupos, gi_fin = [], None
+        def fila_gt():
+            for i in range(len(vals) - 1, hr, -1):
+                if any(str(vals[i][c]).strip().upper() == "TOTAL"
+                       for c in range(min(3, len(vals[i])))):
+                    return i
+            return len(vals)
+
+        for aj in by_kind[kind]:
+            concepto = aj.get("concepto", "Desembolsos")
+            spec = BCE_DEL_VALOR if es_des else BCE_AL_COLS.get(concepto, BCE_DEL_VALOR)
+            c_val = buscar_col(cab, spec, 10 if es_des else 20)
+            val = float(aj.get("valor", 0))
+            cols_suma = {c for c in (c_val, c_tot) if c is not None}
+
+            det = {}
+            if c_fecha is not None:
+                det[c_fecha] = fecha
+            det[c_ref] = aj.get("referencia", "")
+            det[c_grp] = aj.get("acreedor", "")
+            det[c_prest] = aj.get("prestamista", aj.get("acreedor", ""))
+            det[c_val] = val
+            if c_tot is not None:
+                det[c_tot] = val
+            if c_nota is not None:
+                det[c_nota] = aj.get("nota", "")
+
+            # localizar 'TOTAL <grupo>' de la cartera en vals
+            grp_total = None
             for i in range(hr + 1, len(vals)):
                 t0 = " ".join(str(vals[i][c]) for c in range(min(3, len(vals[i])))).upper().strip()
-                if t0 == "TOTAL":
-                    gi_fin = i
-                elif t0.startswith("TOTAL ") and len(t0) > 6:
-                    grupos.append(i)
-            if gi_fin is not None and grupos:
-                for c in range(sh.ncols):
-                    vv = [vals[g][c] for g in grupos
-                          if c < len(vals[g]) and isinstance(vals[g][c], (int, float))
-                          and not isinstance(vals[g][c], bool)]
-                    if vv and c < len(vals[gi_fin]) and isinstance(vals[gi_fin][c], (int, float)):
-                        vals[gi_fin][c] = round(sum(vv), 2)
+                if t0.startswith("TOTAL ") and len(t0) > 6 and \
+                        acreedor_mef(t0[6:].strip(" -:")) == aj.get("acreedor"):
+                    grp_total = i
+                    break
+
+            gt = fila_gt()
+            if grp_total is not None:
+                ins = grp_total
+                while ins - 1 > hr and es_sub(vals[ins - 1]):
+                    ins -= 1
+                desplazar(ins, 1)
+                escribir(ins, det, XF_DET)
+                # sincronizar copia lógica
+                nueva = [""] * sh.ncols
+                for cx, v in det.items():
+                    nueva[cx] = v
+                vals.insert(ins, nueva)
+                # subir subtotales del grupo (ahora +1)
+                for b in range(ins + 1, grp_total + 2):
+                    sumar_num(b, cols_suma, val)
+                    for cx in cols_suma:
+                        if isinstance(vals[b][cx], (int, float)):
+                            vals[b][cx] = round(vals[b][cx] + val, 2)
+            else:
+                # crear bloque completo antes del TOTAL general:
+                # detalle + subtotal del prestamista + TOTAL cartera
+                prest = aj.get("prestamista", aj.get("acreedor", ""))
+                sub = {1 if sh.ncols > 1 else 0: prest}
+                tot = {1 if sh.ncols > 1 else 0: "TOTAL " + prest}
+                for cx in cols_suma:
+                    sub[cx] = val
+                    tot[cx] = val
+                desplazar(gt, 3)
+                escribir(gt, det, XF_DET)
+                escribir(gt + 1, sub, XF_SUB)
+                escribir(gt + 2, tot, XF_TOT)
+                for pos, d in ((gt, det), (gt + 1, sub), (gt + 2, tot)):
+                    nueva = [""] * sh.ncols
+                    for cx, v in d.items():
+                        nueva[cx] = v
+                    vals.insert(pos, nueva)
             algo = True
 
-        # ---- escribir hoja conservando estilos originales ----
-        import xlwt as _xw
-        ws = out.add_sheet(sh.name[:31])
-        if con_formato:
-            try:
-                for c, info in sh.colinfo_map.items():
-                    ws.col(c).width = info.width
-            except Exception:
-                pass
-        defecto = _xw.XFStyle()
-        for ri, fila in enumerate(vals):
-            for c in range(sh.ncols):
-                v = fila[c] if c < len(fila) else ""
-                if xfs[ri] is not None and c < len(xfs[ri]) and xfs[ri][c] is not None:
-                    st = estilo_de(xfs[ri][c])
-                elif plantilla[ri] is not None and con_formato:
-                    st = estilo_de(sh.cell(plantilla[ri], c).xf_index)
-                else:
-                    st = defecto
-                ws.write(ri, c, v, st)
+        # ---- Recalcular el TOTAL GENERAL = suma de los 'TOTAL <grupo>' ----
+        # (también repara totales que en el archivo original quedaron en #REF!)
+        grupos, gt_fin = [], None
+        for i in range(hr + 1, len(vals)):
+            t0 = " ".join(str(vals[i][c]) for c in range(min(3, len(vals[i])))).upper().strip()
+            if t0 == "TOTAL":
+                gt_fin = i
+            elif t0.startswith("TOTAL ") and len(t0) > 6:
+                grupos.append(i)
+        if gt_fin is not None and grupos:
+            row_g = rows.get(gt_fin)
+            for cx in range(sh.ncols):
+                vv = [vals[g][cx] for g in grupos
+                      if cx < len(vals[g]) and isinstance(vals[g][cx], (int, float))
+                      and not isinstance(vals[g][cx], bool)]
+                if not vv:
+                    continue
+                # solo columnas donde el gran total tenía celda numérica o #REF!
+                cel = row_g._Row__cells.get(cx) if row_g else None
+                if cel is None or type(cel).__name__ not in ("NumberCell", "ErrorCell"):
+                    continue
+                xf_prev = cel.xf_idx if hasattr(cel, "xf_idx") else None
+                total = round(sum(vv), 2)
+                ws.write(gt_fin, cx, total)
+                nuevo = rows[gt_fin]._Row__cells.get(cx)
+                if nuevo is not None and xf_prev is not None:
+                    nuevo.xf_idx = xf_prev
+                vals[gt_fin][cx] = total
 
     if not algo:
         return False
-    out.save(ruta_bce)
+    wb.save(ruta_bce)
     return True
 
 

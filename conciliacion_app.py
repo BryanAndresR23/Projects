@@ -541,6 +541,7 @@ PANEL_HTML = r"""<!doctype html>
         <p class="sub" id="resSub">&mdash;</p>
         <div id="resAlert"></div>
         <div class="card"><div class="stats" id="stats"></div>
+          <div id="condBox"></div>
           <div class="scrollx"><table class="mtable" id="mtable"></table></div></div>
       </section>
 
@@ -558,6 +559,9 @@ PANEL_HTML = r"""<!doctype html>
   </div>
 <script>
 const CONCEPTOS=["Desembolsos","Amortizaciones","Intereses","Comisiones","Intereses Condonados","Interés por Mora"];
+// La matriz principal NO incluye Condonados: es un apartado previo, aparte.
+const MATRIZ=["Desembolsos","Amortizaciones","Intereses","Comisiones","Interés por Mora"];
+const CONDONADOS="Intereses Condonados";
 const RUBRO_TXT={"Desembolsos":"desembolsos","Amortizaciones":"amortizaciones","Intereses":"intereses","Comisiones":"comisiones","Intereses Condonados":"condonados","Interés por Mora":"intereses por mora"};
 const CARTERA_TXT={"AMAZON DAC":"AMAZON"};
 const ORDEN_QUIPUX=["AIIB","AMAZON DAC","BANCOS","BID","BIRF","BONOS","CAF","FIDA","FLAR","FMI","GOBIERNOS","GPS"];
@@ -599,19 +603,36 @@ function pintarSidebar(){const es=document.getElementById("estadoSide");
 function pintarMatriz(){
   const piv={};DATA.forEach(r=>{(piv[r.acreedor]=piv[r.acreedor]||{})[r.concepto]={mef:r.mef,bce:r.bce,dif:r.diferencia};});
   const estado={};TOTALES.forEach(t=>estado[t.acreedor]=t.estado);
+  // ---- Apartado previo: Intereses Condonados (aparte de la matriz) ----
+  const condRows=DATA.filter(r=>r.concepto===CONDONADOS);
+  const cb=document.getElementById("condBox");
+  if(condRows.length){
+    let ch=`<div class="diaghead" style="margin-top:4px">Apartado previo &middot; Intereses Condonados<small>Se revisa antes de la conciliaci&oacute;n de los rubros; es un apartado independiente.</small></div>
+      <div class="scrollx" style="max-height:220px;margin-bottom:16px"><table class="mtable"><thead><tr>
+      <th class="acr">Acreedor</th><th>MEF</th><th>BCE</th><th>&Delta;</th><th>Estado</th></tr></thead><tbody>`;
+    condRows.forEach(r=>{const z=Math.abs(r.diferencia)<0.005;
+      ch+=`<tr class="${z?'ok':'bad'}"><td class="acr">${CARTERA_TXT[r.acreedor]||r.acreedor}</td>
+        <td class="num">${fmt(r.mef)}</td><td class="num">${fmt(r.bce)}</td>
+        <td class="d ${z?'ok':''}">${z?'&#10003;':'+'+fmt(Math.abs(r.diferencia))}</td>
+        <td><span class="est-pill ${z?'ok':'bad'}">${z?'CONCILIADO':'DIFERENCIA'}</span></td></tr>`;});
+    ch+=`</tbody></table></div>`;
+    cb.innerHTML=ch;
+  } else cb.innerHTML="";
+
   let h=`<thead><tr><th class="acr" rowspan="2">Acreedor</th><th class="est" rowspan="2">Estado</th>`;
-  CONCEPTOS.forEach(c=>h+=`<th colspan="3" class="sep">${c}</th>`);
-  h+=`</tr><tr class="sub">`;CONCEPTOS.forEach(()=>h+=`<th class="sep">MEF</th><th>BCE</th><th>&Delta;</th>`);
+  MATRIZ.forEach(c=>h+=`<th colspan="3" class="sep">${c}</th>`);
+  h+=`</tr><tr class="sub">`;MATRIZ.forEach(()=>h+=`<th class="sep">MEF</th><th>BCE</th><th>&Delta;</th>`);
   h+=`</tr></thead><tbody>`;
   TOTALES.map(t=>t.acreedor).forEach(ac=>{const ok=estado[ac]==="CONCILIADO";
     h+=`<tr class="${ok?'ok':'bad'}"><td class="acr">${CARTERA_TXT[ac]||ac}</td><td><span class="est-pill ${ok?'ok':'bad'}">${ok?'CONCILIADO':'DIFERENCIA'}</span></td>`;
-    CONCEPTOS.forEach(c=>{const d=piv[ac]&&piv[ac][c];
+    MATRIZ.forEach(c=>{const d=piv[ac]&&piv[ac][c];
       if(!d){h+=`<td class="num sep muted">&mdash;</td><td class="num muted">&mdash;</td><td class="d ok">&#10003;</td>`;}
       else{const z=Math.abs(d.dif)<0.005;h+=`<td class="num sep">${fmt(d.mef)}</td><td class="num">${fmt(d.bce)}</td><td class="d ${z?'ok':''}">${z?'&#10003;':'+'+fmt(Math.abs(d.dif))}</td>`;}});
     h+=`</tr>`;});
-  const tot={};CONCEPTOS.forEach(c=>tot[c]={mef:0,bce:0});DATA.forEach(r=>{tot[r.concepto].mef+=r.mef;tot[r.concepto].bce+=r.bce;});
+  const tot={};MATRIZ.forEach(c=>tot[c]={mef:0,bce:0});
+  DATA.forEach(r=>{if(tot[r.concepto]){tot[r.concepto].mef+=r.mef;tot[r.concepto].bce+=r.bce;}});
   h+=`<tr class="tot"><td class="acr">TOTAL GENERAL</td><td></td>`;
-  CONCEPTOS.forEach(c=>{const m=tot[c].mef,b=tot[c].bce,d=Math.round((m-b)*100)/100,z=Math.abs(d)<0.005;
+  MATRIZ.forEach(c=>{const m=tot[c].mef,b=tot[c].bce,d=Math.round((m-b)*100)/100,z=Math.abs(d)<0.005;
     h+=`<td class="num sep">${fmt(m)}</td><td class="num">${fmt(b)}</td><td class="d ${z?'ok':''}">${z?'&#10003;':'+'+fmt(Math.abs(d))}</td>`;});
   h+=`</tr></tbody>`;document.getElementById("mtable").innerHTML=h;
   const cartOk=TOTALES.filter(t=>t.estado==='CONCILIADO').length;
