@@ -230,8 +230,34 @@ def leer_bce(ruta):
         cab = _celdas_encabezado(hoja, hr)
         cols_val = {nom: buscar_col(cab, spec, cb) for nom, spec, cb in specs_valor}
 
-        # 1) Camino robusto: filas de subtotal 'TOTAL <grupo>'
+        col_grupo0 = buscar_col(cab, SPEC_GRUPO, HOJA_GRUPO[hoja_pat])
+        col_ref0 = buscar_col(cab, spec_ref, respaldo_ref)
+        col_prest0 = buscar_col(cab, (["prestamista"], []), None)
+        # Texto de la referencia del préstamo (p.ej. "BONOS SOBERANOS 2034"):
+        # en Giros del el identificador de detalle es el SIGADE (numérico),
+        # así que para CLASIFICAR se usa la columna "No. Referencia Préstamo".
+        col_reftxt = buscar_col(cab, (["referencia"], []), col_ref0)
+
+        def clasifica_detalle(ref, prest):
+            """Cartera de una fila de detalle del grupo OTROS: primero por la
+            referencia del préstamo (BONOS SOBERANOS->BONOS, KFW->GOBIERNOS...),
+            luego por el prestamista; si nada coincide, BANCOS (p.ej. Bank of
+            New York)."""
+            for texto in (ref, prest):
+                t = normaliza(texto)
+                if not t:
+                    continue
+                dest = acreedor_mef(t)
+                if dest != t:          # hubo coincidencia con una palabra clave
+                    return dest
+            return "BANCOS"
+
+        # 1) Camino robusto: filas de subtotal 'TOTAL <grupo>'.
+        #    'TOTAL OTROS' se EXCLUYE: ese grupo mezcla carteras distintas
+        #    (bonos, KFW, Bank of NY...), así que sus DETALLES se clasifican
+        #    préstamo por préstamo.
         encontrados = 0
+        hay_otros = False
         for r in range(hr + 1, hoja.nrows):
             etiqueta = None
             for c in range(min(hoja.ncols, 3)):
@@ -242,6 +268,9 @@ def leer_bce(ruta):
                     break
             if not etiqueta:
                 continue
+            if normaliza(etiqueta) == "OTROS":
+                hay_otros = True
+                continue
             destino = acreedor_mef(etiqueta)
             fila = _fila_acreedor(destino)
             for nom, ci in cols_val.items():
@@ -249,6 +278,22 @@ def leer_bce(ruta):
                     fila[nom] += num(hoja.cell_value(r, ci))
             encontrados += 1
         if encontrados:
+            if hay_otros:
+                # sumar los DETALLES del grupo OTROS, clasificados uno a uno
+                grupo = None
+                for r in range(hr + 1, hoja.nrows):
+                    et = str(hoja.cell_value(r, col_grupo0)).strip()
+                    if et:
+                        grupo = et
+                    ref = str(hoja.cell_value(r, col_ref0)).strip()
+                    if not ref or grupo is None or normaliza(grupo) != "OTROS":
+                        continue
+                    reftxt = str(hoja.cell_value(r, col_reftxt)).strip()
+                    prest = str(hoja.cell_value(r, col_prest0)).strip() if col_prest0 is not None else ""
+                    fila = _fila_acreedor(clasifica_detalle(reftxt, prest))
+                    for nom, ci in cols_val.items():
+                        if ci is not None:
+                            fila[nom] += num(hoja.cell_value(r, ci))
             return
 
         # 2) Respaldo: sumar el detalle arrastrando la agrupación
