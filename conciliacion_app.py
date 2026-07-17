@@ -177,9 +177,20 @@ def api_conciliar():
         return jsonify({"ok": False, "error": "No identifiqué el reporte del MEF "
                         "(debe tener hoja 'Resumen'). " + " ".join(avisos)})
 
+    # Validar que AMBOS reportes sean del mismo mes (detectado del contenido,
+    # no del nombre del archivo): cruzar meses distintos nunca concilia.
+    per_mef = C.detectar_periodo(ruta_mef, None)
+    per_bce = C.detectar_periodo(None, ruta_bce)
+    if per_mef["periodo"] != per_bce["periodo"]:
+        return jsonify({"ok": False, "error":
+                        f"Los reportes son de MESES DISTINTOS: el MEF es de "
+                        f"{per_mef['texto']} pero el BCE contiene {per_bce['texto']} "
+                        f"(según su 'Periodo consultado'). Verifique los archivos: "
+                        f"el nombre puede decir un mes pero el contenido es otro."})
+
     filas = C.conciliar_archivos(ruta_bce, ruta_mef)
     # Periodo detectado automáticamente del archivo (el usuario no lo elige)
-    info_periodo = C.detectar_periodo(ruta_mef, ruta_bce)
+    info_periodo = per_mef
     periodo = info_periodo["periodo"]
     ahora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
