@@ -25,6 +25,8 @@ Seguridad:
 import os
 import re
 import csv
+import sys
+import fnmatch
 import zipfile
 import unicodedata
 from datetime import datetime
@@ -35,7 +37,8 @@ from datetime import datetime
 carpeta_objetivo = r"Z:\GISI\SSFI\GESTIÓN PAGOS INTERNACIONALES\2026\DEUDA EXTERNA PÚBLICA\Acreedores Internacionales\GOBIERNOS\Contratos\Contratos Agencia Fiscal\KFW\KFW-BMZ-02165173-XXXXXXX-CFN"
 raiz_contratos = r"Z:\GISI\SSFI\GESTIÓN PAGOS INTERNACIONALES\2026\DEUDA EXTERNA PÚBLICA\Acreedores Internacionales\GOBIERNOS\Contratos\Contratos Agencia Fiscal"
 
-MODO = "explorar"          # "explorar" | "renombrar"
+INTERACTIVO = True         # True = pregunta qué hacer al arrancar (no hay que editar el código)
+MODO = "explorar"          # "explorar" | "renombrar"  (se usa si INTERACTIVO = False)
 MODO_PRUEBA = True         # True = solo muestra el plan, no escribe nada
 EXTRAER_COMPRIMIDOS = True # extrae los .zip a una subcarpeta y renombra ahí
 RECURSIVO = True           # numera los anexos por cada subcarpeta encontrada
@@ -182,6 +185,43 @@ def listar_comprimidos(carpeta: str):
             yield archivo, ruta
 
 
+def simular_comprimidos(carpeta: str):
+    """Muestra el plan de renombrado leyendo los .zip SIN extraerlos."""
+    for archivo, ruta in listar_comprimidos(carpeta):
+        registrar(f"\n📦 {archivo}")
+        if not archivo.lower().endswith(".zip"):
+            registrar("   ⚠️  Formato no legible desde Python; descomprímelo a mano.")
+            continue
+        try:
+            with zipfile.ZipFile(ruta) as zf:
+                entradas = [nombre_zip_corregido(i) for i in zf.infolist() if not i.is_dir()]
+        except Exception as e:
+            registrar(f"   ❌ No se pudo leer: {e}")
+            continue
+
+        # Cada subcarpeta del .zip se numera por separado, igual que al renombrar.
+        por_carpeta = {}
+        for entrada in entradas:
+            entrada = entrada.replace("\\", "/")
+            if not entrada.lower().endswith(EXTENSIONES_VALIDAS):
+                continue
+            sub, nombre = os.path.split(entrada)
+            por_carpeta.setdefault(sub, []).append(nombre)
+
+        for sub in sorted(por_carpeta):
+            if sub:
+                registrar(f"   └ {sub}/")
+            nombres = sorted(por_carpeta[sub], key=clave_natural)
+            plan, sin_numero = construir_plan_desde_nombres(nombres)
+            for actual, nuevo in plan:
+                registrar(f"   🧪 {actual}  →  {nuevo}")
+            for pendiente in sin_numero:
+                registrar(f"   ⏭️  Sin número de anexo detectable: {pendiente}")
+            sin_cambio = len(nombres) - len(plan) - len(sin_numero)
+            if sin_cambio:
+                registrar(f"   ✔️  {sin_cambio} ya tienen el nombre correcto")
+
+
 def extraer_comprimidos(carpeta: str):
     """Extrae cada .zip a una subcarpeta con su mismo nombre. No borra el .zip."""
     extraidas = []
@@ -239,7 +279,7 @@ def archivos_de(carpeta: str):
     )
 
 
-def construir_plan(carpeta: str):
+def construir_plan_desde_nombres(nombres):
     """
     Devuelve (plan, sin_numero):
       plan       -> lista de (nombre_actual, nombre_nuevo)
@@ -247,7 +287,7 @@ def construir_plan(carpeta: str):
     """
     grupos, sin_numero = {}, []
 
-    for archivo in archivos_de(carpeta):
+    for archivo in nombres:
         if archivo in ORDEN_MANUAL:
             info = {"numero": int(ORDEN_MANUAL[archivo]), "sub": None, "letra": None}
         else:
@@ -281,6 +321,10 @@ def construir_plan(carpeta: str):
                 plan.append((archivo, nuevo))
 
     return plan, sin_numero
+
+
+def construir_plan(carpeta: str):
+    return construir_plan_desde_nombres(archivos_de(carpeta))
 
 
 def aplicar_plan(carpeta: str, plan):
@@ -389,10 +433,96 @@ def inventario_objetivo(carpeta: str):
             registrar(f"      ❌ No se pudo leer: {e}")
 
 
+def hay_terminal() -> bool:
+    """True si el script corre en una consola capaz de leer respuestas."""
+    try:
+        return bool(INTERACTIVO) and sys.stdin is not None and sys.stdin.isatty()
+    except (AttributeError, ValueError):
+        return False
+
+
+def resolver_carpeta(ruta: str):
+    """
+    Devuelve la carpeta real. Si la ruta trae un comodín tipo
+    "KFW-BMZ-02165173-XXXXXXX-CFN", busca la carpeta que encaje.
+    """
+    ruta = ruta.rstrip("\\/")
+    if os.path.isdir(ruta):
+        return ruta
+
+    padre, patron = os.path.split(ruta)
+    if not os.path.isdir(padre):
+        registrar(f"❌ No existe la carpeta contenedora: {padre}")
+        return None
+
+    patron_glob = re.sub(r"X{2,}", "*", patron, flags=re.IGNORECASE)
+    if patron_glob == patron:
+        registrar(f"❌ No existe la carpeta: {ruta}")
+        return None
+
+    candidatos = [
+        d for d in sorted(os.listdir(padre), key=clave_natural)
+        if os.path.isdir(os.path.join(padre, d))
+        and fnmatch.fnmatch(d.upper(), patron_glob.upper())
+    ]
+
+    if not candidatos:
+        registrar(f"❌ Ninguna carpeta encaja con «{patron}» dentro de {padre}")
+        return None
+
+    if len(candidatos) == 1:
+        elegida = os.path.join(padre, candidatos[0])
+        registrar(f"📌 Carpeta objetivo resuelta: {candidatos[0]}")
+        return elegida
+
+    registrar(f"⚠️  Varias carpetas encajan con «{patron}»:")
+    for i, c in enumerate(candidatos, 1):
+        registrar(f"      {i}) {c}")
+    if not hay_terminal():
+        registrar("   Ajusta 'carpeta_objetivo' con el nombre exacto y vuelve a ejecutar.")
+        return None
+    try:
+        eleccion = int(input("\n   Elige el número de la carpeta: ").strip())
+        return os.path.join(padre, candidatos[eleccion - 1])
+    except (ValueError, IndexError, EOFError, KeyboardInterrupt):
+        registrar("❌ Selección no válida.")
+        return None
+
+
+def elegir_modo():
+    """Menú de arranque: evita tener que editar el código para cambiar de modo."""
+    print("\n" + "=" * 60)
+    print("  RENOMBRADO DE ANEXOS — CONTRATOS DE AGENCIA FISCAL")
+    print("=" * 60)
+    print("  1) Explorar        — no toca nada; muestra cómo se nombran")
+    print("                       los anexos en las demás carpetas y qué")
+    print("                       hay dentro de los comprimidos")
+    print("  2) Simular         — muestra el plan de renombrado sin aplicarlo")
+    print("  3) Renombrar       — aplica los cambios (deja CSV para revertir)")
+    print("  0) Salir")
+    print("=" * 60)
+    opciones = {"1": ("explorar", True), "2": ("renombrar", True), "3": ("renombrar", False)}
+    while True:
+        try:
+            eleccion = input("  Opción: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            sys.exit(0)
+        if eleccion == "0":
+            sys.exit(0)
+        if eleccion in opciones:
+            return opciones[eleccion]
+        print("  ⚠️  Escribe 1, 2, 3 o 0.")
+
 # =========================
 # PROCESO PRINCIPAL
 # =========================
 deshacer = []
+
+if hay_terminal():
+    MODO, MODO_PRUEBA = elegir_modo()
+    log.append(f"⚙️  Selección del menú: MODO={MODO} | MODO_PRUEBA={MODO_PRUEBA}")
+
+carpeta_objetivo = resolver_carpeta(carpeta_objetivo) or carpeta_objetivo
 
 if MODO == "explorar":
     explorar_convencion(raiz_contratos)
@@ -406,6 +536,8 @@ elif MODO == "renombrar":
     else:
         carpetas = [carpeta_objetivo]
         if EXTRAER_COMPRIMIDOS:
+            if MODO_PRUEBA:
+                simular_comprimidos(carpeta_objetivo)
             carpetas += extraer_comprimidos(carpeta_objetivo)
 
         if RECURSIVO:
@@ -429,8 +561,12 @@ elif MODO == "renombrar":
                 registrar(f"   ⏭️  Sin número de anexo detectable: {archivo}")
                 pendientes.append(os.path.join(carpeta, archivo))
 
-        registrar(f"\n📊 Resumen: {renombrados} renombrados | "
-                  f"{len(pendientes)} sin identificar")
+        if MODO_PRUEBA:
+            registrar("\n📊 Simulación terminada: NO se cambió ningún archivo.")
+            registrar("   Si el plan de arriba es correcto, vuelve a ejecutar y elige la opción 3.")
+        else:
+            registrar(f"\n📊 Resumen: {renombrados} renombrados | "
+                      f"{len(pendientes)} sin identificar")
 
         if pendientes:
             registrar("\n💡 Para los pendientes, agrégalos a ORDEN_MANUAL así:")
@@ -440,7 +576,8 @@ elif MODO == "renombrar":
             registrar("   }")
 
         if deshacer:
-            ruta_deshacer = os.path.join(os.getcwd(), "deshacer_renombres.csv")
+            ruta_deshacer = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                         "deshacer_renombres.csv")
             with open(ruta_deshacer, "w", newline="", encoding="utf-8-sig") as f:
                 escritor = csv.writer(f, delimiter=";")
                 escritor.writerow(["carpeta", "nombre_actual", "nombre_original"])
@@ -450,7 +587,8 @@ elif MODO == "renombrar":
 else:
     registrar(f"❌ MODO no válido: {MODO}. Usa \"explorar\" o \"renombrar\".")
 
-ruta_log = os.path.join(os.getcwd(), "log_anexos.txt")
+carpeta_script = os.path.dirname(os.path.abspath(__file__))
+ruta_log = os.path.join(carpeta_script, "log_anexos.txt")
 with open(ruta_log, "w", encoding="utf-8") as f:
     f.write("\n".join(log))
 
