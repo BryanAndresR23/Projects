@@ -1,0 +1,8 @@
+# Salidas generadas por los scripts (no son código fuente)
+log.txt
+log_anexos.txt
+deshacer_renombres.csv
+
+# Python
+__pycache__/
+*.py[cod]
