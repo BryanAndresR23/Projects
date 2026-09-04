@@ -1,0 +1,15 @@
+# Entorno virtual local
+.venv/
+__pycache__/
+*.pyc
+
+# Estado local: contiene datos reales de pagos (montos, beneficiarios,
+# rutas institucionales) y NUNCA debe versionarse.
+estado_local/
+agenda_pagos_data/
+corresponsales_data/
+capturas_matriz_prestamos/
+*.db
+*.bak.json
+.gidep_session_secret
+logs_*/
