@@ -13,3 +13,9 @@ capturas_matriz_prestamos/
 *.bak.json
 .gidep_session_secret
 logs_*/
+
+# EXCLUIDO A PROPOSITO: contiene 3 hashes pbkdf2 de contrasenas de usuarios
+# reales de la aplicacion. No debe subirse a un repositorio remoto. Copielo
+# manualmente al desplegar. Ver README_CONTINUIDAD_CLAUDE.md seccion 3:
+# los usuarios deben migrarse a Active Directory.
+codigo/auth_module.py
