@@ -1,0 +1,16 @@
+# ---------------------------------------------------------------------------
+# Tipos de cambio a USD por período
+# ---------------------------------------------------------------------------
+# Solo se usa cuando el archivo NO trae la columna "Monto USD" ni una columna
+# de tipo de cambio para operaciones en moneda distinta de USD.
+#
+# Formato:
+#   MONEDA:
+#     "AAAA-MM": factor_para_convertir_a_usd
+#
+# Ejemplo (los valores son ilustrativos; deben cargarse los oficiales):
+# EUR:
+#   "2026-06": 1.08
+#
+# Mientras no exista un factor, esas operaciones se descartan del depurado y
+# quedan reportadas en la validación TIPO_CAMBIO_FALTANTE.

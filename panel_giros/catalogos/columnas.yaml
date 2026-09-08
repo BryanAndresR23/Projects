@@ -1,0 +1,208 @@
+# ---------------------------------------------------------------------------
+# Catálogo de columnas
+# ---------------------------------------------------------------------------
+# El ETL no exige que el archivo traiga encabezados exactos: busca el
+# encabezado real dentro de la lista de "alias" de cada campo. Si un reporte
+# cambia de nombre una columna, basta con agregar el nuevo nombre aquí; no hay
+# que tocar el código.
+#
+# La comparación ignora mayúsculas, tildes, puntos, guiones y espacios dobles.
+# ---------------------------------------------------------------------------
+campos:
+  fecha:
+    etiqueta: Fecha
+    requerido: true
+    alias:
+      - FECHA
+      - FECHA OPERACION
+      - FECHA DE OPERACION
+      - FECHA VALOR
+      - FECHA DE VALOR
+      - F OPERACION
+      - FECHA PROCESO
+  referencia:
+    etiqueta: Referencia
+    requerido: true
+    alias:
+      - REFERENCIA
+      - REF
+      - NO OPERACION
+      - NUMERO DE OPERACION
+      - NUM OPERACION
+      - OPERACION
+      - ID OPERACION
+      - CODIGO OPERACION
+      - TRANSACCION
+  corresponsal:
+    etiqueta: Corresponsal
+    requerido: true
+    alias:
+      - CORRESPONSAL
+      - BANCO CORRESPONSAL
+      - BANCO
+      - ENTIDAD
+      - ENTIDAD FINANCIERA
+      - INSTITUCION
+  area_750:
+    etiqueta: Área 750
+    requerido: false
+    alias:
+      - AREA 750
+      - AREA750
+      - CUENTA 750
+      - SUBCUENTA 750
+      - "750"
+  deuda_771:
+    etiqueta: Deuda 771
+    requerido: false
+    alias:
+      - DEUDA 771
+      - DEUDA771
+      - CUENTA 771
+      - SUBCUENTA 771
+      - "771"
+  tipo_mensaje:
+    etiqueta: TF/GS
+    requerido: false
+    alias:
+      - TIPO MENSAJE
+      - TIPO DE MENSAJE
+      - MENSAJE
+      - TF GS
+      - TF/GS
+      - TIPO SWIFT
+      - MENSAJE SWIFT
+  proceso:
+    etiqueta: Proceso
+    requerido: false
+    alias:
+      - PROCESO
+      - TIPO PROCESO
+      - SUBPROCESO
+      - TIPO DE PROCESO
+  moneda:
+    etiqueta: Moneda
+    requerido: true
+    alias:
+      - MONEDA
+      - DIVISA
+      - CURRENCY
+      - MON
+      - COD MONEDA
+  monto:
+    etiqueta: Monto origen
+    requerido: true
+    alias:
+      - MONTO
+      - VALOR
+      - IMPORTE
+      - MONTO ORIGEN
+      - MONTO OPERACION
+      - VALOR OPERACION
+      - MONTO MONEDA ORIGEN
+  tipo_cambio:
+    etiqueta: Tipo de cambio
+    requerido: false
+    alias:
+      - TIPO DE CAMBIO
+      - TIPO CAMBIO
+      - TC
+      - COTIZACION
+      - PARIDAD
+      - FACTOR USD
+  monto_usd:
+    etiqueta: Monto USD
+    requerido: false
+    alias:
+      - MONTO USD
+      - VALOR USD
+      - EQUIVALENTE USD
+      - MONTO EN USD
+      - USD
+  beneficiario:
+    etiqueta: Beneficiario / Ordenante
+    requerido: false
+    alias:
+      - BENEFICIARIO
+      - ORDENANTE
+      - CLIENTE
+      - DETALLE
+      - CONCEPTO
+      - DESCRIPCION
+  estado:
+    etiqueta: Estado
+    requerido: false
+    alias:
+      - ESTADO
+      - SITUACION
+      - STATUS
+      - ESTADO OPERACION
+  sentido:
+    etiqueta: Sentido del giro
+    requerido: false
+    alias:
+      - SENTIDO
+      - TIPO GIRO
+      - TIPO DE GIRO
+      - DIRECCION
+      - CLASE GIRO
+      - TIPO
+      - MODULO
+
+# ---------------------------------------------------------------------------
+# Marcadores por módulo
+# ---------------------------------------------------------------------------
+# Sirven para comprobar que el archivo cargado corresponde al módulo que el
+# validador seleccionó. Se buscan en la columna "sentido" (si existe) y, como
+# respaldo, en el nombre del archivo.
+modulos:
+  GIROS_AL:
+    etiqueta: Giros AL
+    descripcion: Giros al exterior (recursos enviados)
+    marcadores:
+      - GIROS AL
+      - AL EXTERIOR
+      - AL
+      - ENVIADO
+      - ENVIO
+      - EGRESO
+      - SALIDA
+      - PAGO AL EXTERIOR
+      - TRANSFERENCIA ENVIADA
+  GIROS_DEL:
+    etiqueta: Giros DEL
+    descripcion: Giros del exterior (recursos recibidos)
+    marcadores:
+      - GIROS DEL
+      - DEL EXTERIOR
+      - DEL
+      - RECIBIDO
+      - RECEPCION
+      - INGRESO
+      - ENTRADA
+      - COBRO DEL EXTERIOR
+      - TRANSFERENCIA RECIBIDA
+
+# Monedas reconocidas. Las que no estén aquí generan advertencia (no bloquean).
+monedas:
+  USD: [USD, DOLAR, DOLARES, DOLAR ESTADOUNIDENSE, US DOLLAR, DOLAR EEUU]
+  EUR: [EUR, EURO, EUROS]
+  GBP: [GBP, LIBRA, LIBRA ESTERLINA]
+  JPY: [JPY, YEN, YENES]
+  CHF: [CHF, FRANCO SUIZO]
+  CAD: [CAD, DOLAR CANADIENSE]
+  CNY: [CNY, RMB, YUAN, RENMINBI]
+  SEK: [SEK, CORONA SUECA]
+  NOK: [NOK, CORONA NORUEGA]
+  DKK: [DKK, CORONA DANESA]
+  AUD: [AUD, DOLAR AUSTRALIANO]
+  KRW: [KRW, WON]
+
+# Textos que identifican filas de totales o subtotales que deben descartarse.
+filas_no_dato:
+  - TOTAL
+  - TOTALES
+  - SUBTOTAL
+  - SUMA
+  - GRAN TOTAL
+  - TOTAL GENERAL
