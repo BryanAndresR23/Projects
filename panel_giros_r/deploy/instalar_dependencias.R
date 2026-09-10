@@ -12,7 +12,8 @@
 # ---------------------------------------------------------------------------
 
 PAQUETES <- c("shiny", "bslib", "DT", "plotly", "DBI", "RSQLite", "readxl",
-              "yaml", "writexl", "openxlsx", "digest", "jsonlite", "stringi", "testthat")
+              "yaml", "writexl", "openxlsx", "digest", "jsonlite", "stringi",
+              "fontawesome", "sass", "htmltools", "testthat")
 
 faltantes <- PAQUETES[!vapply(PAQUETES, requireNamespace, logical(1), quietly = TRUE)]
 
@@ -20,6 +21,9 @@ if (!length(faltantes)) {
   cat("Todos los paquetes ya están instalados.\n")
 } else {
   cat("Faltan:", paste(faltantes, collapse = ", "), "\n")
+  # Espejo explícito: sin esto, en un R sin repositorio configurado la
+  # instalación falla con "trying to use CRAN without setting a mirror".
+  options(repos = c(CRAN = "https://cloud.r-project.org"))
   install.packages(faltantes, repos = "https://cloud.r-project.org")
   aun_faltan <- faltantes[!vapply(faltantes, requireNamespace, logical(1), quietly = TRUE)]
   if (length(aun_faltan)) {

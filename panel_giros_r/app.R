@@ -67,10 +67,10 @@ ui <- bslib::page_navbar(
                shiny::br(),
                shiny::tags$small("Defina la variable GIROS_DIR_DATOS con una ruta escribible."))
   },
-  bslib::nav_panel("Inicio", icon = shiny::icon("house"), mod_inicio_ui("inicio")),
-  bslib::nav_panel("Cargar archivo", icon = shiny::icon("upload"), mod_cargar_ui("cargar")),
-  bslib::nav_panel("Tablero", icon = shiny::icon("chart-column"), mod_tablero_ui("tablero")),
-  bslib::nav_panel("Histórico", icon = shiny::icon("clock-rotate-left"), mod_historico_ui("historico")),
+  bslib::nav_panel("Inicio", mod_inicio_ui("inicio")),
+  bslib::nav_panel("Cargar archivo", mod_cargar_ui("cargar")),
+  bslib::nav_panel("Tablero", mod_tablero_ui("tablero")),
+  bslib::nav_panel("Histórico", mod_historico_ui("historico")),
   bslib::nav_spacer(),
   bslib::nav_item(shiny::uiOutput("identidad"))
 )
@@ -97,7 +97,7 @@ server <- function(input, output, session) {
   })
 
   output$identidad <- shiny::renderUI({
-    shiny::span(class = "navbar-text small pe-3", shiny::icon("user"), " ", usuario())
+    shiny::span(class = "navbar-text small pe-3", "Usuario: ", usuario())
   })
 
   mod_inicio_server("inicio", datos, cargas, bitacora_reciente)
