@@ -1,0 +1,20 @@
+# ---------------------------------------------------------------------------
+# Variables de entorno del panel (copiar a /etc/R/Renviron.site en el servidor)
+# ---------------------------------------------------------------------------
+
+# Dónde se guardan la base y los archivos de cada carga.
+# Debe existir y pertenecer al usuario que ejecuta Shiny.
+GIROS_DIR_DATOS=/var/lib/panel_giros/datos
+
+# Opcional: catálogos fuera de la aplicación, para editarlos sin volver a
+# desplegar. Si no se define, se usan los de la carpeta catalogos/.
+# GIROS_DIR_CATALOGOS=/etc/panel_giros/catalogos
+
+# Opcional: fija el usuario que se registra en el histórico. Solo tiene sentido
+# en instalaciones de un solo validador; en el servidor conviene dejarlo vacío
+# para que se tome la identidad de la sesión autenticada.
+# GIROS_USUARIO=
+
+# Locale con tildes. Si el servidor no lo tiene, generarlo con:
+#   sudo locale-gen es_EC.UTF-8 && sudo update-locale
+LANG=es_EC.UTF-8

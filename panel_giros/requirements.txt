@@ -1,7 +1,0 @@
-# Panel de Giros — dependencias
-pandas>=2.2
-openpyxl>=3.1          # lectura de .xlsx
-XlsxWriter>=3.2        # exportación a Excel desde el tablero
-PyYAML>=6.0            # catálogos de columnas y tipos de cambio
-streamlit>=1.50        # interfaz web
-plotly>=5.22           # gráficos interactivos
