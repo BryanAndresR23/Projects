@@ -171,27 +171,48 @@ normalizar_tipo_mensaje <- function(valor) {
 
 #' Deduce el formato real del archivo por su contenido, no por su nombre.
 #'
-#' Un .xlsx es un ZIP (empieza con "PK") y un .xls antiguo es un documento
-#' compuesto de OLE2 (empieza con D0 CF 11 E0). Si no se reconoce ninguno de
-#' los dos, se cae de vuelta a la extensión del nombre original.
-.formato_excel <- function(ruta, nombre = "") {
+#' Los sistemas de reportes suelen entregar archivos llamados ".xls" que por
+#' dentro son otra cosa: una tabla HTML o un texto separado por tabuladores.
+#' Excel los abre igual, pero las librerías de lectura no, así que hay que
+#' mirar el contenido:
+#'   - un .xlsx es un ZIP            -> empieza con "PK"
+#'   - un .xls antiguo es un OLE2    -> empieza con D0 CF 11 E0
+#'   - una tabla HTML                -> trae <table> o <tr>
+#'   - cualquier otra cosa legible   -> texto delimitado
+.formato_archivo <- function(ruta, nombre = "") {
   cabecera <- tryCatch(readBin(ruta, "raw", n = 8), error = function(e) raw(0))
   if (length(cabecera) >= 4) {
     inicio <- as.integer(cabecera[1:4])
     if (identical(inicio, c(0x50L, 0x4BL, 0x03L, 0x04L))) return("xlsx")
     if (identical(inicio, c(0xD0L, 0xCFL, 0x11L, 0xE0L))) return("xls")
   }
+
+  muestra <- tryCatch(
+    rawToChar(readBin(ruta, "raw", n = 8192)),
+    error = function(e) ""
+  )
+  if (nzchar(muestra) && grepl("<\\s*(table|tr|html)\\b", muestra, ignore.case = TRUE)) {
+    return("html")
+  }
+
   extension <- tolower(tools::file_ext(nombre))
-  if (identical(extension, "xls")) return("xls")
-  if (extension %in% c("xlsx", "xlsm")) return("xlsx")
+  if (extension %in% c("csv", "txt", "tsv")) return("texto")
+  if (nzchar(muestra)) return("texto")
   NA_character_
+}
+
+# Se conserva el nombre anterior por compatibilidad con las pruebas y el resto
+# del código: para un Excel de verdad devuelve lo mismo que antes.
+.formato_excel <- function(ruta, nombre = "") {
+  formato <- .formato_archivo(ruta, nombre)
+  if (identical(formato, "xlsx") || identical(formato, "xls")) formato else NA_character_
 }
 
 #' Devuelve una ruta cuya extensión coincide con el formato real.
 #'
 #' Shiny guarda los archivos subidos con un nombre temporal ("0.xls") cuya
 #' extensión no siempre corresponde al archivo original, y readxl elige el
-#' lector por la extensión. Sin esto, un .xlsx subido desde el navegador se
+#' lector por la extensión. Sin esto, un .xlsx cargado desde el navegador se
 #' intenta leer como .xls y falla con "libxls error: Unable to open file".
 .ruta_legible <- function(ruta, nombre = basename(ruta)) {
   formato <- .formato_excel(ruta, nombre)
@@ -202,8 +223,69 @@ normalizar_tipo_mensaje <- function(valor) {
   destino
 }
 
+# Entidades HTML habituales en los reportes en español. Sin traducirlas,
+# un encabezado como "N&deg; OPERACI&Oacute;N" no se reconoce como columna.
+ENTIDADES_HTML <- c(
+  nbsp = " ", amp = "&", lt = "<", gt = ">", quot = "\"", apos = "'",
+  aacute = "á", eacute = "é", iacute = "í", oacute = "ó", uacute = "ú",
+  Aacute = "Á", Eacute = "É", Iacute = "Í", Oacute = "Ó", Uacute = "Ú",
+  ntilde = "ñ", Ntilde = "Ñ", uuml = "ü", Uuml = "Ü",
+  deg = "°", ordm = "º", ordf = "ª", middot = "·", bull = "•",
+  laquo = "«", raquo = "»", hellip = "…", ndash = "–", mdash = "—",
+  euro = "€", pound = "£", yen = "¥", cent = "¢",
+  copy = "©", reg = "®", trade = "™"
+)
+
+#' Traduce las entidades HTML (&Oacute;, &#243;, &#xF3;) a su carácter real.
+.desescapar_html <- function(texto) {
+  for (nombre in names(ENTIDADES_HTML)) {
+    texto <- gsub(paste0("&", nombre, ";"), ENTIDADES_HTML[[nombre]], texto, fixed = TRUE)
+  }
+  vapply(texto, .entidades_numericas, character(1), USE.NAMES = FALSE)
+}
+
+.entidades_numericas <- function(texto) {
+  patron <- "&#(x?)([0-9A-Fa-f]+);"
+  while (regexpr(patron, texto, perl = TRUE) != -1) {
+    coincidencia <- regmatches(texto, regexpr(patron, texto, perl = TRUE))
+    partes <- regmatches(coincidencia, regexec(patron, coincidencia, perl = TRUE))[[1]]
+    codigo <- if (nzchar(partes[2])) strtoi(partes[3], 16L) else suppressWarnings(as.integer(partes[3]))
+    reemplazo <- if (is.na(codigo) || codigo < 1) "" else intToUtf8(codigo)
+    texto <- sub(patron, reemplazo, texto, perl = TRUE)
+  }
+  texto
+}
+
+.texto_de_celda_html <- function(celda) {
+  texto <- gsub("(?is)<[^>]*>", " ", celda, perl = TRUE)
+  texto <- .desescapar_html(texto)
+  trimws(gsub("[[:space:]]+", " ", texto))
+}
+
+#' Extrae la tabla más grande de un archivo HTML disfrazado de Excel.
+.leer_tabla_html <- function(ruta) {
+  contenido <- leer_texto_utf8(ruta)
+  tablas <- regmatches(contenido, gregexpr("(?is)<table.*?</table>", contenido, perl = TRUE))[[1]]
+  bloque <- if (length(tablas)) tablas[which.max(nchar(tablas))] else contenido
+
+  filas <- regmatches(bloque, gregexpr("(?is)<tr.*?</tr>", bloque, perl = TRUE))[[1]]
+  if (!length(filas)) return(NULL)
+
+  celdas <- lapply(filas, function(fila) {
+    trozos <- regmatches(fila, gregexpr("(?is)<t[dh][^>]*>.*?</t[dh]>", fila, perl = TRUE))[[1]]
+    vapply(trozos, .texto_de_celda_html, character(1), USE.NAMES = FALSE)
+  })
+  celdas <- Filter(function(f) length(f) > 0, celdas)
+  if (!length(celdas)) return(NULL)
+
+  ancho <- max(lengths(celdas))
+  matriz <- t(vapply(celdas, function(f) c(f, rep("", ancho - length(f))), character(ancho)))
+  lapply(seq_len(ancho), function(j) as.list(matriz[, j]))
+}
+
 hojas_disponibles <- function(ruta, nombre = basename(ruta)) {
-  if (.es_csv(nombre)) return(character(0))
+  formato <- .formato_archivo(ruta, nombre)
+  if (is.na(formato) || !formato %in% c("xlsx", "xls")) return(character(0))
   readxl::excel_sheets(.ruta_legible(ruta, nombre))
 }
 
@@ -222,7 +304,18 @@ hojas_disponibles <- function(ruta, nombre = basename(ruta)) {
 #' Devuelve las columnas como listas de celdas, conservando el tipo original de
 #' cada valor (fecha, número o texto), igual que se ve en Excel.
 leer_crudo <- function(ruta, nombre = basename(ruta), hoja = NULL) {
-  if (.es_csv(nombre)) {
+  formato <- .formato_archivo(ruta, nombre)
+
+  # Tabla HTML con nombre de Excel: se extrae la tabla y se sigue igual.
+  if (identical(formato, "html")) {
+    columnas <- .leer_tabla_html(ruta)
+    if (is.null(columnas) || !length(columnas)) {
+      stop("El archivo parece una página web, pero no contiene ninguna tabla legible.")
+    }
+    return(list(columnas = columnas, n_filas = length(columnas[[1]]), hoja = NA_character_))
+  }
+
+  if (identical(formato, "texto") || is.na(formato)) {
     contenido <- leer_texto_utf8(ruta)
     separador <- .detectar_separador(contenido)
     tabla <- utils::read.table(
