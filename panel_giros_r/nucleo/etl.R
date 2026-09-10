@@ -169,9 +169,42 @@ normalizar_tipo_mensaje <- function(valor) {
   tolower(tools::file_ext(nombre)) %in% c("csv", "txt", "tsv")
 }
 
+#' Deduce el formato real del archivo por su contenido, no por su nombre.
+#'
+#' Un .xlsx es un ZIP (empieza con "PK") y un .xls antiguo es un documento
+#' compuesto de OLE2 (empieza con D0 CF 11 E0). Si no se reconoce ninguno de
+#' los dos, se cae de vuelta a la extensión del nombre original.
+.formato_excel <- function(ruta, nombre = "") {
+  cabecera <- tryCatch(readBin(ruta, "raw", n = 8), error = function(e) raw(0))
+  if (length(cabecera) >= 4) {
+    inicio <- as.integer(cabecera[1:4])
+    if (identical(inicio, c(0x50L, 0x4BL, 0x03L, 0x04L))) return("xlsx")
+    if (identical(inicio, c(0xD0L, 0xCFL, 0x11L, 0xE0L))) return("xls")
+  }
+  extension <- tolower(tools::file_ext(nombre))
+  if (identical(extension, "xls")) return("xls")
+  if (extension %in% c("xlsx", "xlsm")) return("xlsx")
+  NA_character_
+}
+
+#' Devuelve una ruta cuya extensión coincide con el formato real.
+#'
+#' Shiny guarda los archivos subidos con un nombre temporal ("0.xls") cuya
+#' extensión no siempre corresponde al archivo original, y readxl elige el
+#' lector por la extensión. Sin esto, un .xlsx subido desde el navegador se
+#' intenta leer como .xls y falla con "libxls error: Unable to open file".
+.ruta_legible <- function(ruta, nombre = basename(ruta)) {
+  formato <- .formato_excel(ruta, nombre)
+  if (is.na(formato)) return(ruta)
+  if (identical(tolower(tools::file_ext(ruta)), formato)) return(ruta)
+  destino <- tempfile(fileext = paste0(".", formato))
+  file.copy(ruta, destino, overwrite = TRUE)
+  destino
+}
+
 hojas_disponibles <- function(ruta, nombre = basename(ruta)) {
   if (.es_csv(nombre)) return(character(0))
-  readxl::excel_sheets(ruta)
+  readxl::excel_sheets(.ruta_legible(ruta, nombre))
 }
 
 .detectar_separador <- function(contenido) {
@@ -200,10 +233,11 @@ leer_crudo <- function(ruta, nombre = basename(ruta), hoja = NULL) {
     return(list(columnas = lapply(tabla, as.list), n_filas = nrow(tabla), hoja = NA_character_))
   }
 
-  hojas <- readxl::excel_sheets(ruta)
+  legible <- .ruta_legible(ruta, nombre)
+  hojas <- readxl::excel_sheets(legible)
   hoja_usar <- if (!is.null(hoja) && length(hoja) == 1 && hoja %in% hojas) hoja else hojas[1]
   crudo <- suppressMessages(readxl::read_excel(
-    ruta, sheet = hoja_usar, col_names = FALSE, col_types = "list"
+    legible, sheet = hoja_usar, col_names = FALSE, col_types = "list"
   ))
   list(columnas = as.list(crudo), n_filas = nrow(crudo), hoja = hoja_usar)
 }

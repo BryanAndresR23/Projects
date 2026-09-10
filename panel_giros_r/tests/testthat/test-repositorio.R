@@ -25,8 +25,12 @@ test_that("conserva archivo original, depurado y validaciones", {
 
 test_that("la segunda carga crea una versión nueva y desplaza a la anterior", {
   carpeta <- entorno_aislado()
-  primera <- registrar_carga(archivo_al(carpeta), modulo = "GIROS_AL", periodo = "2026-06")
-  segunda <- registrar_carga(archivo_al(carpeta), modulo = "GIROS_AL", periodo = "2026-06",
+  # El mismo archivo las dos veces: openxlsx graba la hora de creación dentro
+  # del .xlsx, así que regenerarlo daría una huella distinta y la detección de
+  # duplicados no se estaría probando de verdad.
+  archivo <- archivo_al(carpeta)
+  primera <- registrar_carga(archivo, modulo = "GIROS_AL", periodo = "2026-06")
+  segunda <- registrar_carga(archivo, modulo = "GIROS_AL", periodo = "2026-06",
                              comentario = "recarga")
   expect_equal(segunda$version, 2)
   historico <- listar_cargas(modulo = "GIROS_AL", periodo = "2026-06")
@@ -38,15 +42,17 @@ test_that("la segunda carga crea una versión nueva y desplaza a la anterior", {
 
 test_that("solo una versión queda activa por módulo y período", {
   carpeta <- entorno_aislado()
-  for (i in 1:3) registrar_carga(archivo_al(carpeta), modulo = "GIROS_AL", periodo = "2026-06")
+  archivo <- archivo_al(carpeta)
+  for (i in 1:3) registrar_carga(archivo, modulo = "GIROS_AL", periodo = "2026-06")
   historico <- listar_cargas(modulo = "GIROS_AL", periodo = "2026-06")
   expect_equal(sum(historico$activa), 1)
 })
 
 test_that("se puede restaurar una versión anterior", {
   carpeta <- entorno_aislado()
-  registrar_carga(archivo_al(carpeta), modulo = "GIROS_AL", periodo = "2026-06")
-  registrar_carga(archivo_al(carpeta), modulo = "GIROS_AL", periodo = "2026-06")
+  archivo <- archivo_al(carpeta)
+  registrar_carga(archivo, modulo = "GIROS_AL", periodo = "2026-06")
+  registrar_carga(archivo, modulo = "GIROS_AL", periodo = "2026-06")
   resultado <- activar_version("GIROS_AL", "2026-06", 1, motivo = "prueba")
   expect_equal(resultado$accion, "RESTAURACION")
   expect_equal(carga_activa("GIROS_AL", "2026-06")$version, 1)
@@ -71,8 +77,9 @@ test_that("no se puede publicar una versión rechazada", {
 
 test_that("se puede guardar sin publicar", {
   carpeta <- entorno_aislado()
-  registrar_carga(archivo_al(carpeta), modulo = "GIROS_AL", periodo = "2026-06")
-  segunda <- registrar_carga(archivo_al(carpeta), modulo = "GIROS_AL", periodo = "2026-06",
+  archivo <- archivo_al(carpeta)
+  registrar_carga(archivo, modulo = "GIROS_AL", periodo = "2026-06")
+  segunda <- registrar_carga(archivo, modulo = "GIROS_AL", periodo = "2026-06",
                              activar = FALSE)
   expect_false(segunda$activa)
   expect_equal(carga_activa("GIROS_AL", "2026-06")$version, 1)

@@ -103,3 +103,25 @@ test_that("lee CSV con separador de punto y coma", {
   resultado <- procesar(ruta, modulo = "GIROS_AL", periodo = "2026-06")
   expect_equal(resultado$filas_depuradas, 3)
 })
+
+test_that("lee el archivo aunque la extensión no corresponda al contenido", {
+  # Shiny guarda lo que se sube con un nombre temporal como "0.xls", sin
+  # importar el formato real. El ETL debe guiarse por el contenido.
+  carpeta <- entorno_aislado()
+  original <- archivo_al(carpeta)
+  disfrazado <- file.path(carpeta, "0.xls")
+  file.copy(original, disfrazado, overwrite = TRUE)
+
+  expect_equal(.formato_excel(disfrazado, "Giros_AL_2026-06.xlsx"), "xlsx")
+  resultado <- procesar(disfrazado, modulo = "GIROS_AL", periodo = "2026-06",
+                        nombre = "Giros_AL_2026-06.xlsx")
+  expect_equal(resultado$filas_depuradas, 3)
+  expect_equal(hojas_disponibles(disfrazado, "Giros_AL_2026-06.xlsx"), "Hoja1")
+})
+
+test_that("un archivo que no es Excel ni CSV no se confunde con uno válido", {
+  carpeta <- entorno_aislado()
+  basura <- file.path(carpeta, "0.xls")
+  writeLines("esto no es un excel", basura)
+  expect_true(is.na(.formato_excel(basura, "cualquier.cosa")))
+})
